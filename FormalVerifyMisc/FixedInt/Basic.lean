@@ -1,21 +1,44 @@
 import Mathlib.Tactic
 import Mathlib.Data.Int.Basic
 
+-- Prevent '2^31' from having to be written as '2 ^ 31'
+set_option linter.style.commandStart false
+
+def in_bounds_32 (n : Int) : Prop := -2^31 ≤ n ∧ n < 2^31
+
+theorem in_bounds_32_of_abs_lt (n : Int) (h : |n| < 2^31) :
+  in_bounds_32 n := by
+  by_cases hpos : 0 < n
+  · use le_of_lt (lt_trans (by norm_num) hpos)
+    exact (abs_of_pos hpos) ▸ h
+  rename' hpos => hneg; push_neg at hneg
+  use le_of_lt (neg_lt.mp ((abs_of_nonpos hneg) ▸ h))
+  exact lt_of_le_of_lt hneg (by norm_num)
+
 -- Proves the conditions for moving addition across the 'toInt' conversion
-theorem int32_toInt_add_of_lt_of_ge (a b : Int32)
-  (hlb : -2 ^ 31 ≤ a.toInt + b.toInt) (hub : a.toInt + b.toInt < 2 ^ 31) :
+theorem int32_toInt_add_of_bounds
+  (a b : Int32) (hb : in_bounds_32 (a.toInt + b.toInt)) :
   (a + b).toInt = a.toInt + b.toInt := by
   rw [Int32.toInt_add, Int.bmod_eq_of_le]
-  · apply Int.le_trans (Int.neg_le_neg _) hlb; simp
-  · apply Int.le_trans hub; simp
+  · apply Int.le_trans (Int.neg_le_neg _) hb.1; simp
+  · apply Int.le_trans hb.2; simp
 
 -- Proves the conditions for moving multiplication across the 'toInt' conversion
-theorem int32_toInt_mul_of_lt_of_ge (a b : Int32)
-  (hlb : -2 ^ 31 ≤ a.toInt * b.toInt) (hub : a.toInt * b.toInt < 2 ^ 31) :
+theorem int32_toInt_mul_of_bounds
+  (a b : Int32) (hb : in_bounds_32 (a.toInt * b.toInt)) :
   (a * b).toInt = a.toInt * b.toInt := by
   rw [Int32.toInt_mul, Int.bmod_eq_of_le]
-  · apply Int.le_trans (Int.neg_le_neg _) hlb; simp
-  · apply Int.le_trans hub; simp
+  · apply Int.le_trans (Int.neg_le_neg _) hb.1; simp
+  · apply Int.le_trans hb.2; simp
+
+-- Proves the conditions for moving division across the 'toInt' conversion
+-- Note that division on Int32 corresponds to Int.tdiv, not the standard
+-- '/' operator. The difference is that 'tdiv' always rounds toward zero.
+theorem int32_toInt_div (a b : Int32) (h : Int32.minValue < a ∨ b ≠ -1) :
+  (a / b).toInt = a.toInt.tdiv b.toInt :=
+  Or.elim h
+    (fun lhs ↦ Int32.toInt_div_of_ne_left a b (Int32.ne_of_lt lhs).symm)
+    (fun rhs ↦ Int32.toInt_div_of_ne_right a b rhs)
 
 -- If an Int32 does not meet the requirement to be "well-behaved",
 -- it must be equal to Int32.minValue
@@ -43,6 +66,11 @@ theorem int32_toInt_lt_maxval (a : Int32) : a.toInt < 2^31 :=
 -- Int32.toInt returns a value not less than -2^31
 theorem int32_minval_le_toInt (a : Int32) : -2^31 ≤ a.toInt :=
   Int32.le_iff_toInt_le.mp (Int32.minValue_le a)
+
+-- An Int32 cast to to integer is 'in bounds'
+theorem int32_in_bounds_toInt (a : Int32) :
+  in_bounds_32 a.toInt :=
+  ⟨int32_minval_le_toInt a, int32_toInt_lt_maxval a⟩
 
 -- Negation can be moved across the 'toInt' conversion as long as
 -- the value isn't -2^31
