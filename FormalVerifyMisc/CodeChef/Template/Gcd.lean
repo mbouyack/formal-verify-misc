@@ -1,5 +1,5 @@
-import FormalVerifyMisc.FixedInt.Abs
-import FormalVerifyMisc.FixedInt.Mod
+import FormalVerifyMisc.Int32.Abs
+import FormalVerifyMisc.Int32.Mod
 
 namespace CodeChef
 
