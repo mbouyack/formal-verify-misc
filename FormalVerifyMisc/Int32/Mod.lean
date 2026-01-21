@@ -11,7 +11,7 @@ theorem int32_mod_minval (a : Int32) (hlb : Int32.minValue < a) : a % Int32.minV
   · simp
   · exact Int.neg_lt_of_neg_lt (Int32.lt_iff_toInt_lt.mp hlb)
 
--- In Int32, the resul of '%' is always "well-behaved" if the dividends is well-behaved
+-- In Int32, the result of '%' is always "well-behaved" if the dividend is well-behaved
 -- TODO: Consider proving an alternate version of this theorem with b ≠ 0
 -- instead of Int32.minValue < a
 theorem int32_minval_lt_mod (a b : Int32) (hlb : Int32.minValue < a) : Int32.minValue < a % b := by
