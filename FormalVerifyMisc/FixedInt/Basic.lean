@@ -72,6 +72,9 @@ theorem int32_in_bounds_toInt (a : Int32) :
   in_bounds_32 a.toInt :=
   ⟨int32_minval_le_toInt a, int32_toInt_lt_maxval a⟩
 
+theorem int32_toInt_ne_zero_of_ne_zero (a : Int32) (hnz : a ≠ 0) : a.toInt ≠ 0 :=
+  fun h ↦ hnz (Int32.toInt_inj.mp (Eq.trans h (Int32.toInt_zero.symm)))
+
 -- Negation can be moved across the 'toInt' conversion as long as
 -- the value isn't -2^31
 theorem int32_toInt_neg (a : Int32) (hlb : Int32.minValue < a) :
