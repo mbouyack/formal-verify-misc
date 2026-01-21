@@ -48,6 +48,20 @@ theorem int32_abs_of_nonpos (a : Int32) (hnp : a ≤ 0) : int32_abs a = -a := by
   push_neg at h
   rw [if_pos (Int32.lt_of_le_of_ne hnp h)]
 
+-- An integer multiplied by its sign gives its absolute value
+theorem int32_mul_sign_eq_abs (a : Int32) : a * int32_sign a = int32_abs a := by
+  by_cases hneg : a < 0
+  · rw [int32_abs_of_nonpos a (Int32.le_of_lt hneg)]
+    rw [int32_sign_of_neg a hneg]
+    rw [Int32.mul_neg]; simp
+  by_cases hz : a = 0
+  · subst hz; simp
+  rename' hz => hnz; push_neg at hnz
+  have hnn := Int32.not_lt.mp hneg
+  rw [int32_abs_of_nonneg _ hnn]
+  rw [int32_sign_of_pos a (Int32.lt_of_le_of_ne hnn hnz.symm)]
+  simp
+
 -- The absolute value of the negation is equal to the absolute value
 @[simp] theorem int32_abs_neg (a : Int32) : int32_abs (-a) = int32_abs a := by
   by_cases h : 0 ≤ a

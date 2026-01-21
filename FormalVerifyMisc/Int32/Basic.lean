@@ -4,6 +4,21 @@ import Mathlib.Data.Int.Basic
 -- Prevent '2^31' from having to be written as '2 ^ 31'
 set_option linter.style.commandStart false
 
+def int32_sign (a : Int32) : Int32 :=
+  if a < 0 then -1 else
+  if 0 < a then 1 else 0
+
+theorem int32_sign_of_neg (a : Int32) (hneg : a < 0) : int32_sign a = -1 := by
+  unfold int32_sign
+  rw [if_pos hneg]
+
+theorem int32_sign_of_zero : int32_sign 0 = 0 := rfl
+
+theorem int32_sign_of_pos (a : Int32) (hneg : 0 < a) : int32_sign a = 1 := by
+  unfold int32_sign
+  rw [if_pos hneg, if_neg]
+  exact Int32.lt_asymm hneg
+
 def in_bounds_32 (n : Int) : Prop := -2^31 ≤ n ∧ n < 2^31
 
 theorem in_bounds_32_of_abs_lt (n : Int) (h : |n| < 2^31) :
@@ -72,7 +87,7 @@ theorem int32_in_bounds_toInt (a : Int32) :
   in_bounds_32 a.toInt :=
   ⟨int32_minval_le_toInt a, int32_toInt_lt_maxval a⟩
 
-theorem int32_toInt_ne_zero_of_ne_zero (a : Int32) (hnz : a ≠ 0) : a.toInt ≠ 0 :=
+theorem int32_toInt_ne_zero_of_ne_zero {a : Int32} (hnz : a ≠ 0) : a.toInt ≠ 0 :=
   fun h ↦ hnz (Int32.toInt_inj.mp (Eq.trans h (Int32.toInt_zero.symm)))
 
 -- Negation can be moved across the 'toInt' conversion as long as

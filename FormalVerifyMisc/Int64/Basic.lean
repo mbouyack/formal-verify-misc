@@ -4,6 +4,21 @@ import Mathlib.Data.Int.Basic
 -- Prevent '2^63' from having to be written as '2 ^ 63'
 set_option linter.style.commandStart false
 
+def int64_sign (a : Int64) : Int64 :=
+  if a < 0 then -1 else
+  if 0 < a then 1 else 0
+
+theorem int64_sign_of_neg (a : Int64) (hneg : a < 0) : int64_sign a = -1 := by
+  unfold int64_sign
+  rw [if_pos hneg]
+
+theorem int64_sign_of_zero : int64_sign 0 = 0 := rfl
+
+theorem int64_sign_of_pos (a : Int64) (hneg : 0 < a) : int64_sign a = 1 := by
+  unfold int64_sign
+  rw [if_pos hneg, if_neg]
+  exact Int64.lt_asymm hneg
+
 def in_bounds_64 (n : Int) : Prop := -2^63 ≤ n ∧ n < 2^63
 
 theorem in_bounds_64_of_abs_lt (n : Int) (h : |n| < 2^63) :
@@ -72,7 +87,7 @@ theorem int64_in_bounds_toInt (a : Int64) :
   in_bounds_64 a.toInt :=
   ⟨int64_minval_le_toInt a, int64_toInt_lt_maxval a⟩
 
-theorem int64_toInt_ne_zero_of_ne_zero (a : Int64) (hnz : a ≠ 0) : a.toInt ≠ 0 :=
+theorem int64_toInt_ne_zero_of_ne_zero {a : Int64} (hnz : a ≠ 0) : a.toInt ≠ 0 :=
   fun h ↦ hnz (Int64.toInt_inj.mp (Eq.trans h (Int64.toInt_zero.symm)))
 
 -- Negation can be moved across the 'toInt' conversion as long as
