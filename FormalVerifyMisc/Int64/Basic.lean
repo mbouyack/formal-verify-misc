@@ -34,17 +34,19 @@ theorem in_bounds_64_of_abs_lt (n : Int) (h : |n| < 2^63) :
 theorem int64_toInt_add_of_bounds
   (a b : Int64) (hb : in_bounds_64 (a.toInt + b.toInt)) :
   (a + b).toInt = a.toInt + b.toInt := by
-  rw [Int64.toInt_add, Int.bmod_eq_of_le]
-  · apply Int.le_trans (Int.neg_le_neg _) hb.1; simp
-  · apply Int.le_trans hb.2; simp
+  rw [Int64.toInt_add, Int.bmod_eq_of_le hb.1 hb.2]
+
+-- Proves the conditions for moving subtraction across the 'toInt' conversion
+theorem int64_toInt_sub_of_bounds
+  (a b : Int64) (hb : in_bounds_64 (a.toInt - b.toInt)) :
+  (a - b).toInt = a.toInt - b.toInt := by
+  rw [Int64.toInt_sub, Int.bmod_eq_of_le hb.1 hb.2]
 
 -- Proves the conditions for moving multiplication across the 'toInt' conversion
 theorem int64_toInt_mul_of_bounds
   (a b : Int64) (hb : in_bounds_64 (a.toInt * b.toInt)) :
   (a * b).toInt = a.toInt * b.toInt := by
-  rw [Int64.toInt_mul, Int.bmod_eq_of_le]
-  · apply Int.le_trans (Int.neg_le_neg _) hb.1; simp
-  · apply Int.le_trans hb.2; simp
+  rw [Int64.toInt_mul, Int.bmod_eq_of_le hb.1 hb.2]
 
 -- Proves the conditions for moving division across the 'toInt' conversion
 -- Note that division on Int64 corresponds to Int.tdiv, not the standard
