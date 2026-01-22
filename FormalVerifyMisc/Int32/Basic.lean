@@ -19,6 +19,17 @@ theorem int32_sign_of_pos (a : Int32) (hneg : 0 < a) : int32_sign a = 1 := by
   rw [if_pos hneg, if_neg]
   exact Int32.lt_asymm hneg
 
+theorem int32_toInt_sign (a : Int32) :
+  (int32_sign a).toInt = Int.sign a.toInt := by
+  unfold int32_sign
+  split_ifs with h₀ h₁
+  · have hneg := Int32.toInt_zero ▸ (Int32.lt_iff_toInt_lt.mp h₀)
+    rw [Int.sign_eq_neg_one_of_neg hneg]; rfl
+  · have hpos := Int32.toInt_zero ▸ (Int32.lt_iff_toInt_lt.mp h₁)
+    rw [Int.sign_eq_one_of_pos hpos]; rfl
+  rw [Int32.le_antisymm (Int32.not_lt.mp h₁) (Int32.not_lt.mp h₀)]
+  rfl
+
 def in_bounds_32 (n : Int) : Prop := -2^31 ≤ n ∧ n < 2^31
 
 theorem in_bounds_32_of_abs_lt (n : Int) (h : |n| < 2^31) :

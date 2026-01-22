@@ -19,6 +19,17 @@ theorem int64_sign_of_pos (a : Int64) (hneg : 0 < a) : int64_sign a = 1 := by
   rw [if_pos hneg, if_neg]
   exact Int64.lt_asymm hneg
 
+theorem int64_toInt_sign (a : Int64) :
+  (int64_sign a).toInt = Int.sign a.toInt := by
+  unfold int64_sign
+  split_ifs with h₀ h₁
+  · have hneg := Int64.toInt_zero ▸ (Int64.lt_iff_toInt_lt.mp h₀)
+    rw [Int.sign_eq_neg_one_of_neg hneg]; rfl
+  · have hpos := Int64.toInt_zero ▸ (Int64.lt_iff_toInt_lt.mp h₁)
+    rw [Int.sign_eq_one_of_pos hpos]; rfl
+  rw [Int64.le_antisymm (Int64.not_lt.mp h₁) (Int64.not_lt.mp h₀)]
+  rfl
+
 def in_bounds_64 (n : Int) : Prop := -2^63 ≤ n ∧ n < 2^63
 
 theorem in_bounds_64_of_abs_lt (n : Int) (h : |n| < 2^63) :
