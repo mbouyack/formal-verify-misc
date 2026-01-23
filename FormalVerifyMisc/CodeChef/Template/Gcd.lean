@@ -138,7 +138,7 @@ theorem gcd_dvd (a b : Int32) :
     exact abs_dvd_self _
   rename' hbz => hbnz; push_neg at hbnz
   rw [if_neg hbnz]
-  have hbnz' := int32_toInt_ne_zero_of_ne_zero _ hbnz
+  have hbnz' := int32_toInt_ne_zero_of_ne_zero hbnz
   -- Do the recursion - note that this relies on b ≠ 0
   have hrecurse := gcd_dvd b (a % b)
   rw [Int32.toInt_mod] at hrecurse
@@ -170,7 +170,7 @@ theorem dvd_gcd_of_dvd_of_dvd
     rw [int32_toInt_abs a (int32_minval_lt_of_ne_minval a hmmv.symm)]
     rwa [dvd_abs]
   rename' hbz => hbnz; push_neg at hbnz
-  have hbnz' := int32_toInt_ne_zero_of_ne_zero _ hbnz
+  have hbnz' := int32_toInt_ne_zero_of_ne_zero hbnz
   rw [if_neg hbnz]
   -- Recurse
   apply dvd_gcd_of_dvd_of_dvd _ hdvdb; simp
