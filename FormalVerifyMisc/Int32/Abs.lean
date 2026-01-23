@@ -26,12 +26,26 @@ theorem int32_toInt_abs (a : Int32) (hlb : Int32.minValue < a) :
 
 @[simp] theorem int32_abs_zero : int32_abs 0 = 0 := rfl
 
+theorem int32_zero_of_abs_zero
+  (a : Int32) (hz : int32_abs a = 0) : a = 0 := by
+  unfold int32_abs at hz
+  split_ifs at hz with h
+  · apply Int32.neg_inj.mp
+    rw [hz]; rfl
+  · assumption
+
 -- The absolute value returns a non-negative integer (with one exception)
 theorem int32_abs_nonneg (a : Int32) (hlb : Int32.minValue < a) :
   0 ≤ int32_abs a := by
   apply Int32.le_iff_toInt_le.mpr; simp
   rw [int32_toInt_abs a hlb]
   exact abs_nonneg a.toInt
+
+theorem int32_abs_pos_of_ne_zero
+  (a : Int32) (hlb : Int32.minValue < a) (hnz : a ≠ 0) : 0 < int32_abs a := by
+  apply Int32.lt_of_le_of_ne (int32_abs_nonneg a hlb)
+  contrapose! hnz
+  exact int32_zero_of_abs_zero _ hnz.symm
 
 -- The absolute value of a non-negative integer is that integer itself
 theorem int32_abs_of_nonneg (a : Int32) (hnn : 0 ≤ a) : int32_abs a = a := by

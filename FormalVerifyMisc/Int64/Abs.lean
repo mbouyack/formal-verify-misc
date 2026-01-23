@@ -26,12 +26,26 @@ theorem int64_toInt_abs (a : Int64) (hlb : Int64.minValue < a) :
 
 @[simp] theorem int64_abs_zero : int64_abs 0 = 0 := rfl
 
+theorem int64_zero_of_abs_zero
+  (a : Int64) (hz : int64_abs a = 0) : a = 0 := by
+  unfold int64_abs at hz
+  split_ifs at hz with h
+  · apply Int64.neg_inj.mp
+    rw [hz]; rfl
+  · assumption
+
 -- The absolute value returns a non-negative integer (with one exception)
 theorem int64_abs_nonneg (a : Int64) (hlb : Int64.minValue < a) :
   0 ≤ int64_abs a := by
   apply Int64.le_iff_toInt_le.mpr; simp
   rw [int64_toInt_abs a hlb]
   exact abs_nonneg a.toInt
+
+theorem int64_abs_pos_of_ne_zero
+  (a : Int64) (hlb : Int64.minValue < a) (hnz : a ≠ 0) : 0 < int64_abs a := by
+  apply Int64.lt_of_le_of_ne (int64_abs_nonneg a hlb)
+  contrapose! hnz
+  exact int64_zero_of_abs_zero _ hnz.symm
 
 -- The absolute value of a non-negative integer is that integer itself
 theorem int64_abs_of_nonneg (a : Int64) (hnn : 0 ≤ a) : int64_abs a = a := by
