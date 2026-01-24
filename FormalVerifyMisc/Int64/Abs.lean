@@ -10,7 +10,7 @@ def int64_abs (a : Int64) : Int64 :=
   if a < 0 then -a else a
 
 -- The absolute value of -2^63 is still -2^63
-theorem int64_abs_minval : int64_abs Int64.minValue = Int64.minValue := rfl
+@[simp] theorem int64_abs_minval : int64_abs Int64.minValue = Int64.minValue := rfl
 
 -- The absolute value operator can be moved across the 'toInt' conversion
 -- as long as the value isn't -2^63
@@ -23,6 +23,19 @@ theorem int64_toInt_abs (a : Int64) (hlb : Int64.minValue < a) :
     exact int64_toInt_neg a hlb
   · replace h := Int64.le_iff_toInt_le.mp (Int64.not_lt.mp h); simp at h
     rw [abs_of_nonneg h]
+
+theorem int64_toInt_abs_lt (a : Int64) : (int64_abs a).toInt < 2^63 := by
+  by_cases hmv : a = Int64.minValue
+  · subst hmv; simp
+  rename' hmv => hnmv; push_neg at hnmv
+  rw [int64_toInt_abs _ (int64_minval_lt_of_ne_minval _ hnmv.symm)]
+  apply abs_lt.mpr
+  constructor
+  · apply lt_of_le_of_ne (int64_minval_le_toInt a)
+    contrapose! hnmv
+    apply Int64.toInt_inj.mp
+    exact hnmv.symm
+  · exact int64_toInt_lt_maxval a
 
 @[simp] theorem int64_abs_zero : int64_abs 0 = 0 := rfl
 

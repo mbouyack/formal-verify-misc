@@ -10,7 +10,7 @@ def int32_abs (a : Int32) : Int32 :=
   if a < 0 then -a else a
 
 -- The absolute value of -2^31 is still -2^31
-theorem int32_abs_minval : int32_abs Int32.minValue = Int32.minValue := rfl
+@[simp] theorem int32_abs_minval : int32_abs Int32.minValue = Int32.minValue := rfl
 
 -- The absolute value operator can be moved across the 'toInt' conversion
 -- as long as the value isn't -2^31
@@ -23,6 +23,19 @@ theorem int32_toInt_abs (a : Int32) (hlb : Int32.minValue < a) :
     exact int32_toInt_neg a hlb
   · replace h := Int32.le_iff_toInt_le.mp (Int32.not_lt.mp h); simp at h
     rw [abs_of_nonneg h]
+
+theorem int32_toInt_abs_lt (a : Int32) : (int32_abs a).toInt < 2^31 := by
+  by_cases hmv : a = Int32.minValue
+  · subst hmv; simp
+  rename' hmv => hnmv; push_neg at hnmv
+  rw [int32_toInt_abs _ (int32_minval_lt_of_ne_minval _ hnmv.symm)]
+  apply abs_lt.mpr
+  constructor
+  · apply lt_of_le_of_ne (int32_minval_le_toInt a)
+    contrapose! hnmv
+    apply Int32.toInt_inj.mp
+    exact hnmv.symm
+  · exact int32_toInt_lt_maxval a
 
 @[simp] theorem int32_abs_zero : int32_abs 0 = 0 := rfl
 
