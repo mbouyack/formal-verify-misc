@@ -53,6 +53,11 @@ decreasing_by
   apply Int.natAbs_ne_zero.mpr
   exact int64_toInt_ne_zero_of_ne_zero hynz
 
+-- Solves the equation ax + by = z, when gcd x y ∣ z
+def euclidean' (x y z : Int64) (hxnz : x ≠ 0) (hynz : y ≠ 0) : Int64 × Int64 :=
+  (fun ⟨a, b, d⟩ ↦ ⟨(z / d) * a, (z / d) * b⟩)
+  (euclidean x y hxnz hynz)
+
 -- This result will be used in both 'euclidean_bounds' and 'euclidean_verify'
 lemma int64_sub_tdiv_mul_abs_lt_of_natAbs_le (a b x y : Int64)
   (hlbx : Int64.minValue < x)
@@ -128,11 +133,6 @@ decreasing_by
   apply Nat.mod_lt _ (Nat.pos_of_ne_zero _)
   apply Int.natAbs_ne_zero.mpr
   exact int64_toInt_ne_zero_of_ne_zero hynz
-
--- Solves the equation ax + by = z, when gcd x y ∣ z
-def euclidean' (x y z : Int64) (hxnz : x ≠ 0) (hynz : y ≠ 0) : Int64 × Int64 :=
-  (fun ⟨a, b, d⟩ ↦ ⟨(z / d) * a, (z / d) * b⟩)
-  (euclidean x y hxnz hynz)
 
 -- 'Int.gcd_tmod' seems to be a missing theorem, so prove this lemma instead
 lemma int64_gcd_toInt_mod (x y : Int64) :
