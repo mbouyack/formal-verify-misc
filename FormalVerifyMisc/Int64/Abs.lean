@@ -37,6 +37,13 @@ theorem int64_toInt_abs_lt (a : Int64) : (int64_abs a).toInt < 2^63 := by
     exact hnmv.symm
   · exact int64_toInt_lt_maxval a
 
+theorem int64_natAbs_toInt_lt (a : Int64) (hlba : Int64.minValue < a) :
+  a.toInt.natAbs < 2^63 := by
+  apply Int.lt_of_ofNat_lt_ofNat
+  rw [← Int.abs_eq_natAbs]
+  rw [← int64_toInt_abs _ hlba]
+  exact int64_toInt_abs_lt _
+
 @[simp] theorem int64_abs_zero : int64_abs 0 = 0 := rfl
 
 theorem int64_zero_of_abs_zero

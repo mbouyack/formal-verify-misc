@@ -37,6 +37,13 @@ theorem int32_toInt_abs_lt (a : Int32) : (int32_abs a).toInt < 2^31 := by
     exact hnmv.symm
   · exact int32_toInt_lt_maxval a
 
+theorem int32_natAbs_toInt_lt (a : Int32) (hlba : Int32.minValue < a) :
+  a.toInt.natAbs < 2^31 := by
+  apply Int.lt_of_ofNat_lt_ofNat
+  rw [← Int.abs_eq_natAbs]
+  rw [← int32_toInt_abs _ hlba]
+  exact int32_toInt_abs_lt _
+
 @[simp] theorem int32_abs_zero : int32_abs 0 = 0 := rfl
 
 theorem int32_zero_of_abs_zero
