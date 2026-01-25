@@ -12,8 +12,6 @@ theorem int32_mod_minval (a : Int32) (hlb : Int32.minValue < a) : a % Int32.minV
   · exact Int.neg_lt_of_neg_lt (Int32.lt_iff_toInt_lt.mp hlb)
 
 -- In Int32, the result of '%' is always "well-behaved" if the dividend is well-behaved
--- TODO: Consider proving an alternate version of this theorem with b ≠ 0
--- instead of Int32.minValue < a
 theorem int32_minval_lt_mod (a b : Int32) (hlb : Int32.minValue < a) : Int32.minValue < a % b := by
   apply Int32.lt_iff_toInt_lt.mpr; simp
   by_cases hbneg : b.toInt < 0
@@ -27,6 +25,19 @@ theorem int32_minval_lt_mod (a b : Int32) (hlb : Int32.minValue < a) : Int32.min
   have hbpos := lt_of_le_of_ne (Int.not_lt.mp hbneg) hnz.symm
   apply lt_of_le_of_lt (Int.neg_le_neg_iff.mpr _) (Int.lt_tmod_of_pos a.toInt hbpos)
   exact le_of_lt (int32_toInt_lt_maxval b)
+
+-- In Int32, the result of '%' is always "well-behaved" if the divisor is non-zero
+theorem int32_minval_lt_mod' (a b : Int32) (h : b ≠ 0) : Int32.minValue < a % b := by
+  apply Int32.lt_iff_toInt_lt.mpr
+  rw [Int32.toInt_mod]
+  by_cases hbneg : b.toInt < 0
+  · have := Int.lt_tmod_of_pos a.toInt (Int.neg_pos.mpr hbneg)
+    simp at this
+    exact Int.lt_of_le_of_lt (int32_minval_le_toInt b) this
+  have hbpos := lt_of_le_of_ne (Int.not_lt.mp hbneg) (int32_toInt_ne_zero_of_ne_zero h).symm
+  apply Int.lt_of_le_of_lt _ (Int.lt_tmod_of_pos a.toInt hbpos)
+  apply Int.le_neg_of_le_neg (le_of_lt _)
+  exact int32_toInt_lt_maxval _
 
 @[simp] theorem int32_mod_neg (a b : Int32) : a % (-b) = a % b := by
   apply Int32.toInt_inj.mp
