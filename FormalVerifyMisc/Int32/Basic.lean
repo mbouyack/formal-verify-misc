@@ -100,6 +100,10 @@ theorem int32_in_bounds_toInt (a : Int32) :
   in_bounds_32 a.toInt :=
   ⟨int32_minval_le_toInt a, int32_toInt_lt_maxval a⟩
 
+theorem int32_toInt_zero_iff {a : Int32} : a = 0 ↔ a.toInt = 0 := ⟨
+  fun h ↦ Int32.toInt_inj.mpr h,
+  fun h ↦ Int32.toInt_inj.mp (Int32.toInt_zero ▸ h)⟩
+
 theorem int32_toInt_ne_zero_of_ne_zero {a : Int32} (hnz : a ≠ 0) : a.toInt ≠ 0 :=
   fun h ↦ hnz (Int32.toInt_inj.mp (Eq.trans h (Int32.toInt_zero.symm)))
 

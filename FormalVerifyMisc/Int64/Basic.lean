@@ -100,6 +100,10 @@ theorem int64_in_bounds_toInt (a : Int64) :
   in_bounds_64 a.toInt :=
   ⟨int64_minval_le_toInt a, int64_toInt_lt_maxval a⟩
 
+theorem int64_toInt_zero_iff {a : Int64} : a = 0 ↔ a.toInt = 0 := ⟨
+  fun h ↦ Int64.toInt_inj.mpr h,
+  fun h ↦ Int64.toInt_inj.mp (Int64.toInt_zero ▸ h)⟩
+
 theorem int64_toInt_ne_zero_of_ne_zero {a : Int64} (hnz : a ≠ 0) : a.toInt ≠ 0 :=
   fun h ↦ hnz (Int64.toInt_inj.mp (Eq.trans h (Int64.toInt_zero.symm)))
 
