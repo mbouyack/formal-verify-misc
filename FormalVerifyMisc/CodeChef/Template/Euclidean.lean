@@ -147,8 +147,8 @@ lemma int64_gcd_toInt_mod (x y : Int64) :
 theorem euclidean_verify (x y : Int64)
   (hxnz : x ≠ 0) (hynz : y ≠ 0)
   (hlbx : Int64.minValue < x) (hlby : Int64.minValue < y) :
-  (fun P ↦ P.1.toInt * x.toInt + P.2.1.toInt * y.toInt)
-  (euclidean x y hxnz hynz) = Int.gcd x.toInt y.toInt := by
+  (fun ⟨a, b, _⟩ ↦ a.toInt * x.toInt + b.toInt * y.toInt)
+  (euclidean x y hxnz hynz) = ↑(Int.gcd x.toInt y.toInt) := by
   dsimp
   unfold euclidean
   by_cases hmodz : x % y = 0
