@@ -4,6 +4,9 @@ import FormalVerifyMisc.Int64.Mod
 
 namespace CodeChef
 
+-- Prevent '2^63' from having to be written as '2 ^ 63'
+set_option linter.style.commandStart false
+
 /- The purpose of this file is to verify the implementation of the
    extended eucliean algorithm from the template code I use on codechef.com -/
 
@@ -44,7 +47,7 @@ namespace CodeChef
 -- Returns the triple ⟨a, b, gcd x y⟩
 def euclidean (x y : Int64)
   (_ : x ≠ 0) (hynz : y ≠ 0) : Int64 × Int64 × Int64 :=
-  if h : x % y = 0 then ⟨0, int64_sign y, y⟩ else
+  if h : x % y = 0 then ⟨0, int64_sign y, int64_abs y⟩ else
   (fun ⟨a, b, d⟩ ↦ ⟨b, a - (x / y) * b, d⟩) (euclidean y (x % y) hynz h)
 termination_by y.toInt.natAbs
 decreasing_by
@@ -196,5 +199,91 @@ decreasing_by
   apply Nat.mod_lt _ (Nat.pos_of_ne_zero _)
   apply Int.natAbs_ne_zero.mpr
   exact int64_toInt_ne_zero_of_ne_zero hynz
+
+-- Prove that the third value returned by the euclidean algorithm is the gcd of x and y
+theorem euclidean_eq_gcd (x y : Int64)
+  (hxnz : x ≠ 0) (hynz : y ≠ 0)
+  (hlbx : Int64.minValue < x) (hlby : Int64.minValue < y) :
+  (euclidean x y hxnz hynz).2.2.toInt = ↑(Int.gcd x.toInt y.toInt) := by
+  unfold euclidean; dsimp
+  split_ifs with hmodz
+  · simp
+    rw [int64_toInt_abs _ hlby, Int.abs_eq_natAbs]
+    apply Int.ofNat_inj.mpr
+    apply (Int.gcd_eq_natAbs_right _).symm
+    apply Int.dvd_of_tmod_eq_zero
+    rw [← Int64.toInt_mod, hmodz, Int64.toInt_zero]
+  rename' hmodz => hmodnz; push_neg at hmodnz
+  dsimp
+  have hlbmod := int64_minval_lt_mod _ y hlbx
+  rw [euclidean_eq_gcd y (x % y) hynz hmodnz hlby hlbmod]
+  rw [Int.gcd_comm, int64_gcd_toInt_mod]
+termination_by y.toInt.natAbs
+decreasing_by
+  simp
+  apply Nat.mod_lt _ (Nat.pos_of_ne_zero _)
+  apply Int.natAbs_ne_zero.mpr
+  exact int64_toInt_ne_zero_of_ne_zero hynz
+
+-- Prove that the pair (a, b) returned by euclidean' satisfies
+-- the equation ax + by = z
+-- NOTE: This proof is possible with less-restricted bounds
+-- (and perhaps even no bounds) but it would be more difficult,
+-- may require changes to the algorithm, and doesn't match typical
+-- usage.
+theorem euclidean_verify' (x y z : Int64)
+  (hxnz : x ≠ 0) (hynz : y ≠ 0)
+  (hlbx : Int64.minValue < x) (hlby : Int64.minValue < y)
+  (hdvd : ↑(Int.gcd x.toInt y.toInt) ∣ z.toInt)
+  (hxz : |x.toInt * z.toInt| < 2^63)
+  (hyz : |y.toInt * z.toInt| < 2^63) :
+  (fun ⟨a, b⟩ ↦ a.toInt * x.toInt + b.toInt * y.toInt)
+  (euclidean' x y z hxnz hynz) = z.toInt := by
+  unfold euclidean'; dsimp
+  by_cases hzz : z = 0
+  · subst hzz; simp
+  rename' hzz => hznz; push_neg at hznz
+  let a := (euclidean x y hxnz hynz).1
+  let b := (euclidean x y hxnz hynz).2.1
+  let d := (euclidean x y hxnz hynz).2.2
+  have hgcd : d.toInt = ↑(Int.gcd x.toInt y.toInt) :=
+    euclidean_eq_gcd _ _ hxnz hynz hlbx hlby
+  have hdnn1 : d ≠ -1 := by
+    intro hdn1
+    rw [Int64.toInt_inj.mpr hdn1] at hgcd
+    simp at hgcd
+  change (z / d * a).toInt * x.toInt + (z / d * b).toInt * y.toInt = z.toInt
+  have hbounds :
+    a.toInt.natAbs ≤ y.toInt.natAbs ∧ b.toInt.natAbs ≤ x.toInt.natAbs :=
+    euclidean_bounds x y hxnz hynz hlbx hlby
+  have hibzda : in_bounds_64 ((z / d).toInt * a.toInt) := by
+    rw [int64_toInt_div _ _ (Or.inr hdnn1)]
+    apply in_bounds_64_of_abs_lt
+    apply Int.lt_of_le_of_lt _ hyz
+    rw [Int.abs_eq_natAbs, Int.abs_eq_natAbs]
+    apply Int.ofNat_le_ofNat_of_le
+    rw [Int.natAbs_mul, Int.natAbs_mul, mul_comm]
+    apply le_trans _ (Nat.mul_le_mul_right _ hbounds.1)
+    apply Nat.mul_le_mul_left
+    rw [Int.natAbs_tdiv]
+    exact Nat.div_le_self _ _
+  have hibzdb : in_bounds_64 ((z / d).toInt * b.toInt) := by
+    rw [int64_toInt_div _ _ (Or.inr hdnn1)]
+    apply in_bounds_64_of_abs_lt
+    apply Int.lt_of_le_of_lt _ hxz
+    rw [Int.abs_eq_natAbs, Int.abs_eq_natAbs]
+    apply Int.ofNat_le_ofNat_of_le
+    rw [Int.natAbs_mul, Int.natAbs_mul, mul_comm]
+    apply le_trans _ (Nat.mul_le_mul_right _ hbounds.2)
+    apply Nat.mul_le_mul_left
+    rw [Int.natAbs_tdiv]
+    exact Nat.div_le_self _ _
+  rw [int64_toInt_mul_of_bounds _ _ hibzda]
+  rw [int64_toInt_mul_of_bounds _ _ hibzdb]
+  rw [mul_assoc, mul_assoc, ← mul_add]
+  have := euclidean_verify x y hxnz hynz hlbx hlby; simp at this
+  rw [this]
+  rw [int64_toInt_div _ _ (Or.inr hdnn1), hgcd]
+  exact Int.tdiv_mul_cancel_of_dvd hdvd
 
 end CodeChef
