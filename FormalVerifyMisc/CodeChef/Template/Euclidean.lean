@@ -1,3 +1,4 @@
+import Mathlib.Data.Nat.Prime.Basic
 import FormalVerifyMisc.CodeChef.Template.Gcd
 import FormalVerifyMisc.Int64.Abs
 import FormalVerifyMisc.Int64.Mod
@@ -60,6 +61,9 @@ decreasing_by
 def euclidean' (x y z : Int64) (hxnz : x ≠ 0) (hynz : y ≠ 0) : Int64 × Int64 :=
   (fun ⟨a, b, d⟩ ↦ ⟨(z / d) * a, (z / d) * b⟩)
   (euclidean x y hxnz hynz)
+
+def modinv (x p : Int64) (hxnz : x ≠ 0) (hppos : 0 < p) : Int64 :=
+  (euclidean x p hxnz (Int64.ne_of_lt hppos).symm).1
 
 -- This result will be used in both 'euclidean_bounds' and 'euclidean_verify'
 lemma int64_sub_tdiv_mul_abs_lt_of_natAbs_le (a b x y : Int64)
@@ -285,5 +289,42 @@ theorem euclidean_verify' (x y z : Int64)
   rw [this]
   rw [int64_toInt_div _ _ (Or.inr hdnn1), hgcd]
   exact Int.tdiv_mul_cancel_of_dvd hdvd
+
+theorem modinv_verify (x p : Int64)
+  (hxnz : x ≠ 0) (hlbx : Int64.minValue < x)
+  (hppos : 0 < p) (hp : Nat.Prime p.toInt.natAbs)
+  (hpndvd : ¬p.toInt ∣ x.toInt) :
+  (x.toInt * (modinv x p hxnz hppos).toInt) % p.toInt = 1 := by
+  let a := modinv x p hxnz hppos
+  have hpnz : p ≠ 0 := (Int64.ne_of_lt hppos).symm
+  have hlbp : Int64.minValue < p :=
+    Int64.lt_trans (by rfl) hppos
+  unfold modinv
+  rw [mul_comm]
+  change a.toInt * _ % _ = 1
+  have := euclidean_verify x p hxnz hpnz hlbx hlbp
+  dsimp at this
+  have hcp : IsCoprime x.toInt p.toInt := by
+    rw [← IsCoprime.abs_abs_iff]
+    rw [Int.abs_eq_natAbs, Int.abs_eq_natAbs]
+    apply Nat.isCoprime_iff_coprime.mpr
+    rw [Nat.coprime_comm]
+    apply (Nat.Prime.coprime_iff_not_dvd hp).mpr
+    contrapose! hpndvd
+    exact Int.natAbs_dvd_natAbs.mp hpndvd
+  have hgcd : (Int.gcd x.toInt p.toInt) = (1 : ℤ) :=
+    Int.ofNat_inj.mpr (Int.isCoprime_iff_gcd_eq_one.mp hcp)
+  rw [hgcd] at this
+  change a.toInt * _ + _ = _ at this
+  apply congrArg (fun n ↦ n  % p.toInt) at this
+  rw [Int.add_emod, Int.mul_emod_left, add_zero] at this
+  rw [Int.emod_emod] at this
+  rwa [@Int.emod_eq_of_lt 1 p.toInt (by norm_num)] at this
+  have h1lep : 1 ≤ p.toInt :=
+    Int.add_one_le_of_lt (Int64.lt_iff_toInt_lt.mp hppos)
+  apply lt_of_le_of_ne h1lep
+  contrapose! hp
+  rw [← hp]
+  norm_num
 
 end CodeChef
