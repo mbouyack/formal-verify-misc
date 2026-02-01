@@ -30,6 +30,9 @@ theorem int64_toInt_sign (a : Int64) :
   rw [Int64.le_antisymm (Int64.not_lt.mp h₁) (Int64.not_lt.mp h₀)]
   rfl
 
+theorem int64_toInt_pos_of_pos {a : Int64} (hpos : 0 < a) :
+  0 < a.toInt := Int64.lt_iff_toInt_lt.mp hpos
+
 def in_bounds_64 (n : Int) : Prop := -2^63 ≤ n ∧ n < 2^63
 
 theorem in_bounds_64_of_abs_lt (n : Int) (h : |n| < 2^63) :

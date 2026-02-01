@@ -30,6 +30,9 @@ theorem int32_toInt_sign (a : Int32) :
   rw [Int32.le_antisymm (Int32.not_lt.mp h₁) (Int32.not_lt.mp h₀)]
   rfl
 
+theorem int32_toInt_pos_of_pos {a : Int32} (hpos : 0 < a) :
+  0 < a.toInt := Int32.lt_iff_toInt_lt.mp hpos
+
 def in_bounds_32 (n : Int) : Prop := -2^31 ≤ n ∧ n < 2^31
 
 theorem in_bounds_32_of_abs_lt (n : Int) (h : |n| < 2^31) :
