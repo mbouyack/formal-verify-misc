@@ -10,28 +10,40 @@ namespace CodeChef
 -- Prevent '2^31' from having to be written as '2 ^ 31'
 set_option linter.style.commandStart false
 
-def SIEVE_SIZE : Nat := 1000001
+def SIEVE_SIZE : ℕ := 1000001
 
-structure Sieve where
+structure Sieve (L : ℕ) where
   divs : Array Int32
   primes : Array Int32
-  hsize : divs.size < 2^30
+  -- The size of 'divs' is given by 'L'
+  hsize : divs.size = L
+  -- The length of the sieve has an upper bound
+  -- This is required to avoid exceeding Int32.maxValue
+  hLlt : L < 2^30
+  -- The entries in the sieve are non-negative
   hdivsnn : ∀ x ∈ divs, 0 ≤ x
+  -- The values in 'primes' are all positive
   hprimespos : ∀ p ∈ primes, 0 < p
+  -- For every value 'p' in 'primes', every multiple of 'p' is marked in 'divs'
   hmarked : ∀ p ∈ primes, ∀ i, (0 < i) → (ilt : i < divs.size) →
     p.toInt ∣ (i : ℤ) → divs[i] ≠ 0
-  hpmem_iff : (hnnil : primes ≠ #[]) → ∀ p : Nat,
+  -- A natural number is in 'primes' if-and-only-if it is a prime
+  -- less than or equal to the last value in 'primes'
+  hpmem_iff : (hnnil : primes ≠ #[]) → ∀ p : ℕ,
     ((p : ℤ) ∈ (Array.map Int32.toInt primes) ↔
      (p : ℤ) ≤ (primes.back (Array.size_pos_iff.mpr hnnil)).toInt ∧ Nat.Prime p)
+  -- If an entry in the sieve is non-zero, its value corresponds to the smallest
+  -- divisor of its index greater than 1
   hdivs_dvd : ∀ i, (ilt : i < divs.size) → divs[i]'(ilt) ≠ 0 →
     (divs[i]'(ilt)).toInt ∣ i ∧
     ∀ y, 1 < y → y ∣ i → (divs[i]'(ilt)).toInt ≤ (y : ℤ)
 
 -- Construct a sieve with all elements set to zero
-def init_sieve : Sieve where
+def init_sieve : Sieve SIEVE_SIZE where
   divs := Array.replicate SIEVE_SIZE 0
   primes := #[]
-  hsize := by
+  hsize := Array.size_replicate
+  hLlt := by
     unfold SIEVE_SIZE;
     simp
   hdivsnn := by
@@ -50,13 +62,13 @@ def init_sieve : Sieve where
     · intro y lty ydvd; simp
 
 -- Update the sieve to indicate that 'p' is the smallest divisor of 'n'
-def mark_sieve (S : Sieve) (p n : Int32)
+def mark_sieve {L : ℕ} (S : Sieve L) (p n : Int32)
   (hppos : 0 < p) (hnpos : 0 < n)
   (nlt : n.toInt.natAbs < S.divs.size)
   (hprime : Nat.Prime p.toInt.natAbs)
   (hnextp : ∀ q, Nat.Prime q → (q : ℤ) < p.toInt →
     (q : ℤ) ∈ (Array.map Int32.toInt S.primes))
-  (hdvd : p.toInt ∣ n.toInt) : Sieve where
+  (hdvd : p.toInt ∣ n.toInt) : Sieve L where
   divs := if S.divs[n.toInt.natAbs] ≠ 0 then S.divs
     else S.divs.set n.toInt.natAbs p nlt
   primes := S.primes
@@ -65,6 +77,7 @@ def mark_sieve (S : Sieve) (p n : Int32)
     · exact S.hsize
     · rw [Array.size_set nlt]
       exact S.hsize
+  hLlt := S.hLlt
   hdivsnn := by
     intro x
     split_ifs with h
@@ -122,7 +135,7 @@ def mark_sieve (S : Sieve) (p n : Int32)
         rw [Array.size_set nlt] at ilt
         exact S.hdivs_dvd i ilt hinz
 
-@[simp] theorem mark_sieve_divs_size (S : Sieve) (p n : Int32)
+@[simp] theorem mark_sieve_divs_size {L : ℕ} (S : Sieve L) (p n : Int32)
   (hppos : 0 < p) (hnpos : 0 < n)
   (nlt : n.toInt.natAbs < S.divs.size)
   (hprime : Nat.Prime p.toInt.natAbs)
@@ -130,12 +143,9 @@ def mark_sieve (S : Sieve) (p n : Int32)
     (q : ℤ) ∈ (Array.map Int32.toInt S.primes))
   (hdvd : p.toInt ∣ n.toInt) :
   (mark_sieve S p n hppos hnpos nlt hprime hnextp hdvd).divs.size = S.divs.size := by
-  unfold mark_sieve; simp
-  split_ifs with h
-  · exact Array.size_set nlt
-  · rfl
+  rw [Sieve.hsize, Sieve.hsize]
 
-@[simp] theorem mark_sieve_primes (S : Sieve) (p n : Int32)
+@[simp] theorem mark_sieve_primes {L : ℕ} (S : Sieve L) (p n : Int32)
   (hppos : 0 < p) (hnpos : 0 < n)
   (nlt : n.toInt.natAbs < S.divs.size)
   (hprime : Nat.Prime p.toInt.natAbs)
@@ -145,7 +155,7 @@ def mark_sieve (S : Sieve) (p n : Int32)
   (mark_sieve S p n hppos hnpos nlt hprime hnextp hdvd).primes = S.primes := rfl
 
 -- Every cell marked in 'S' is also marked in 'mark_sieve S'
-theorem mark_sieve_marked_of_marked (S : Sieve) (p n : Int32)
+theorem mark_sieve_marked_of_marked {L : ℕ} (S : Sieve L) (p n : Int32)
   (hppos : 0 < p) (hnpos : 0 < n)
   (nlt : n.toInt.natAbs < S.divs.size)
   (hprime : Nat.Prime p.toInt.natAbs)
@@ -165,7 +175,7 @@ theorem mark_sieve_marked_of_marked (S : Sieve) (p n : Int32)
   · exact hmark
 
 -- The given index is non-zero after calling 'mark_sieve'
-theorem mark_sieve_index_marked (S : Sieve) (p n : Int32)
+theorem mark_sieve_index_marked {L : ℕ} (S : Sieve L) (p n : Int32)
   (hppos : 0 < p) (hnpos : 0 < n)
   (nlt : n.toInt.natAbs < S.divs.size)
   (hprime : Nat.Prime p.toInt.natAbs)
@@ -180,14 +190,14 @@ theorem mark_sieve_index_marked (S : Sieve) (p n : Int32)
     rw [hppos]; simp
   · assumption
 
-lemma int32_toInt_lt_of_lt_divs_size (S : Sieve) (n : Int32)
+lemma int32_toInt_lt_of_lt_divs_size {L : ℕ} (S : Sieve L) (n : Int32)
   (hnlt : n.toInt.natAbs < S.divs.size) : n.toInt < 2^30 := by
   by_cases h : n.toInt ≤ 0
   · apply lt_of_le_of_lt h (by simp)
   push_neg at h
   apply Int.ofNat_lt.mpr at hnlt
-  rw [Int.natAbs_of_nonneg (le_of_lt h)] at hnlt
-  exact lt_trans hnlt (Int.ofNat_lt_ofNat_of_lt S.hsize)
+  rw [Int.natAbs_of_nonneg (le_of_lt h), S.hsize] at hnlt
+  exact lt_trans hnlt (Int.ofNat_lt_ofNat_of_lt S.hLlt)
 
 -- We'll need this result below for "mark_multiples"
 lemma int32_toInt_add_of_pos_of_dvd_of_lt (m n : Int32)
@@ -206,7 +216,7 @@ lemma int32_toInt_add_of_pos_of_dvd_of_lt (m n : Int32)
     exact (Int.mul_lt_mul_right (two_pos)).mpr hnlt
 
 -- Prove the termination requirements for 'mark_multiple'
-lemma mark_multiple_termination (S : Sieve) (p n : Int32)
+lemma mark_multiple_termination {L : ℕ} (S : Sieve L) (p n : Int32)
   (hppos : 0 < p) (hnpos : 0 < n)
   (hdvd : p.toInt ∣ n.toInt)
   (hnlt : n.toInt.natAbs < S.divs.size) :
@@ -223,12 +233,12 @@ lemma mark_multiple_termination (S : Sieve) (p n : Int32)
   exact Int.lt_add_of_pos_right _ hppos'
 
 -- Mark one multiple of 'p' in sieve 'S'
-def mark_multiple (S : Sieve) (p n : Int32)
+def mark_multiple {L : ℕ} (S : Sieve L) (p n : Int32)
   (hppos : 0 < p) (hnpos : 0 < n)
   (hprime : Nat.Prime p.toInt.natAbs)
   (hnextp : ∀ q, Nat.Prime q → (q : ℤ) < p.toInt →
     (q : ℤ) ∈ (Array.map Int32.toInt S.primes))
-  (hdvd : p.toInt ∣ n.toInt) : Sieve :=
+  (hdvd : p.toInt ∣ n.toInt) : Sieve L :=
   if hnlt : n.toInt.natAbs < S.divs.size then
   (fun (hnp : (n + p).toInt = n.toInt + p.toInt) ↦
     mark_multiple
@@ -255,31 +265,24 @@ decreasing_by
   apply mark_multiple_termination <;> assumption
 
 -- Mark all multiples of the next prime, 'p', in the Sieve
-def mark_multiples (S : Sieve) (p : Int32)
+def mark_multiples {L : ℕ} (S : Sieve L) (p : Int32)
   (hppos : 0 < p)
   (hprime : Nat.Prime p.toInt.natAbs)
   (hnextp : ∀ q, Nat.Prime q → (q : ℤ) < p.toInt →
-    (q : ℤ) ∈ (Array.map Int32.toInt S.primes)) : Sieve :=
+    (q : ℤ) ∈ (Array.map Int32.toInt S.primes)) : Sieve L :=
   mark_multiple S p p hppos hppos hprime hnextp (by use 1; simp)
 
-@[simp] theorem mark_multiple_divs_size (S : Sieve) (p n : Int32)
+@[simp] theorem mark_multiple_divs_size {L : ℕ} (S : Sieve L) (p n : Int32)
   (hppos : 0 < p) (hnpos : 0 < n)
   (hprime : Nat.Prime p.toInt.natAbs)
   (hnextp : ∀ q, Nat.Prime q → (q : ℤ) < p.toInt →
     (q : ℤ) ∈ (Array.map Int32.toInt S.primes))
   (hdvd : p.toInt ∣ n.toInt) :
   (mark_multiple S p n hppos hnpos hprime hnextp hdvd).divs.size = S.divs.size := by
-  unfold mark_multiple; simp
-  split_ifs with h
-  · rw [mark_multiple_divs_size, mark_sieve_divs_size]
-  · rfl
-termination_by S.divs.size - n.toInt.natAbs
-decreasing_by
-  rw [mark_sieve_divs_size]
-  apply mark_multiple_termination <;> assumption
+  rw [Sieve.hsize, Sieve.hsize]
 
 -- The 'primes' field is unchanged by 'mark_multiple'
-@[simp] theorem mark_multiple_primes (S : Sieve) (p n : Int32)
+@[simp] theorem mark_multiple_primes {L : ℕ} (S : Sieve L) (p n : Int32)
   (hppos : 0 < p) (hnpos : 0 < n)
   (hprime : Nat.Prime p.toInt.natAbs)
   (hnextp : ∀ q, Nat.Prime q → (q : ℤ) < p.toInt →
@@ -296,7 +299,7 @@ decreasing_by
   apply mark_multiple_termination <;> assumption
 
 -- Every cell marked in 'S' is also marked in 'mark_multiple S'
-theorem mark_multiple_marked_of_marked (S : Sieve) (p n : Int32)
+theorem mark_multiple_marked_of_marked {L : ℕ} (S : Sieve L) (p n : Int32)
   (hppos : 0 < p) (hnpos : 0 < n)
   (hprime : Nat.Prime p.toInt.natAbs)
   (hnextp : ∀ q, Nat.Prime q → (q : ℤ) < p.toInt →
@@ -318,7 +321,7 @@ decreasing_by
 
 -- Show that 'mark_multiple' does indeed mark every
 -- multiple of 'p' greater than or equal to 'n'
-theorem mark_multiple_verify (S : Sieve) (p n : Int32)
+theorem mark_multiple_verify {L : ℕ} (S : Sieve L) (p n : Int32)
   (hppos : 0 < p) (hnpos : 0 < n)
   (hprime : Nat.Prime p.toInt.natAbs)
   (hnextp : ∀ q, Nat.Prime q → (q : ℤ) < p.toInt →
@@ -391,7 +394,7 @@ decreasing_by
   apply mark_multiple_termination <;> assumption
 
 -- Verify that 'mark_multiples' does indeed mark every multiple of 'p'
-theorem mark_multiples_verify (S : Sieve) (p : Int32)
+theorem mark_multiples_verify (S : Sieve L) (p : Int32)
   (hppos : 0 < p)
   (hprime : Nat.Prime p.toInt.natAbs)
   (hnextp : ∀ q, Nat.Prime q → (q : ℤ) < p.toInt →
