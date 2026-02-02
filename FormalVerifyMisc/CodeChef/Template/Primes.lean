@@ -30,6 +30,8 @@ structure Sieve (L : ℕ) where
   hprimespos : ∀ q ∈ primes, 0 < q
   -- 'p' is positive
   hppos : 0 < p
+  -- 'p' is less than 'L' - the size of the sieve
+  hplt : p.toInt < (L : ℤ)
   -- The absolute value of 'p' is prime
   hpprime : Nat.Prime p.toInt.natAbs
   -- Any prime less than 'p' is already in 'primes'
@@ -64,6 +66,9 @@ def init_sieve : Sieve SIEVE_SIZE where
   hprimespos :=
     fun _ hmem ↦ False.elim (Array.not_mem_empty _ hmem)
   hppos := rfl
+  hplt := by
+    unfold SIEVE_SIZE
+    simp
   hpprime := by
     simp; norm_num
   hpnext := by
@@ -107,6 +112,7 @@ def mark_sieve {L : ℕ} (S : Sieve L) (n : Int32)
         exact Int32.le_of_lt S.hppos
   hprimespos := S.hprimespos
   hppos := S.hppos
+  hplt := S.hplt
   hpprime := S.hpprime
   hpnext := S.hpnext
   hmarked := by
@@ -402,5 +408,79 @@ theorem mark_multiples_verify {L : ℕ} (S : Sieve L) :
   have hipos' : 0 < (i : ℤ) := Int.ofNat_lt_ofNat_of_lt hipos
   have plei := Int.le_of_dvd hipos' pdvdi
   apply mark_multiple_verify <;> assumption
+
+-- Loop over the entries in the sieve to find the next prime
+def find_next_prime_impl {L : ℕ} (S : Sieve L)
+  (n : Int32) (hltn : 1 < n)
+  (hmark : ∀ (i : ℕ), (plti : S.p.toInt < (i : ℤ)) →
+    (iltn : (i : ℤ) < n.toInt) →
+    (iltL : i < L) →
+    S.divs[i]'(by rwa [S.hsize]) ≠ 0) : Int32 :=
+  if nlt : n.toInt < (L : ℤ) then
+  (fun hns : (n + 1).toInt = n.toInt + 1 ↦
+    if h : S.divs[n.toInt.natAbs]'(by
+      apply Int.lt_of_ofNat_lt_ofNat
+      convert S.hsize ▸ nlt
+      apply Int.natAbs_of_nonneg (le_of_lt _)
+      apply lt_trans _ (Int32.lt_iff_toInt_lt.mp hltn); simp
+    ) = 0 then n else
+    find_next_prime_impl S (n + 1) (by
+      apply Int32.lt_iff_toInt_lt.mpr
+      rw [hns]
+      apply Int.lt_add_of_le_of_pos _ (by simp)
+      exact le_of_lt (Int32.lt_iff_toInt_lt.mp hltn)
+    ) (by
+        intro i plti iltn iltL
+        rw [hns] at *
+        by_cases hinabs : i = n.toInt.natAbs
+        · rwa [getElem_congr_idx hinabs]
+        apply hmark i plti _ iltL
+        apply lt_of_le_of_ne (Int.le_of_lt_add_one iltn)
+        contrapose! hinabs
+        apply Int.ofNat_inj.mp
+        rw [hinabs, Int.ofNat_natAbs_of_nonneg]
+        apply le_of_lt
+        apply lt_trans _ (Int32.lt_iff_toInt_lt.mp hltn); simp
+    )
+  ) (by
+    apply int32_toInt_succ
+    apply Int32.lt_iff_toInt_lt.mpr (lt_trans nlt _)
+    apply lt_trans (Int.ofNat_lt_ofNat_of_lt S.hLlt)
+    unfold Int32.maxValue; simp
+  ) else Int32.ofInt (L : ℤ)
+termination_by S.divs.size - n.toInt.natAbs
+decreasing_by
+  have hnn : 0 ≤ n.toInt := by
+    apply le_of_lt
+    apply lt_trans _ (Int32.lt_iff_toInt_lt.mp hltn); simp
+  rw [hns, Int.natAbs_add_of_nonneg]
+  · rw [← Nat.sub_sub]
+    apply Nat.sub_lt
+    · apply Nat.sub_pos_of_lt
+      apply Int.lt_of_ofNat_lt_ofNat
+      rwa [S.hsize, Int.ofNat_natAbs_of_nonneg]
+      assumption
+    · simp
+  · assumption
+  · simp
+
+def find_next_prime {L : ℕ} (S : Sieve L) : Int32 :=
+  (fun hns : (S.p + 1).toInt = S.p.toInt + 1 ↦
+    find_next_prime_impl S (S.p + 1) (by
+      apply Int32.lt_iff_toInt_lt.mpr
+      rw [hns]; simp
+      exact Int32.lt_iff_toInt_lt.mp S.hppos
+    ) (by
+      intro i plti iltn iltL
+      rw [hns] at iltn
+      exact False.elim (not_lt_of_ge (Int.le_of_lt_add_one iltn) plti)
+    )
+  ) (by
+    apply int32_toInt_succ
+    apply Int32.lt_iff_toInt_lt.mpr
+    apply lt_trans S.hplt
+    apply lt_trans (Int.ofNat_lt_ofNat_of_lt S.hLlt)
+    unfold Int32.maxValue; simp
+  )
 
 end CodeChef
