@@ -44,6 +44,16 @@ theorem in_bounds_32_of_abs_lt (n : Int) (h : |n| < 2^31) :
   use le_of_lt (neg_lt.mp ((abs_of_nonpos hneg) ▸ h))
   exact lt_of_le_of_lt hneg (by norm_num)
 
+-- Proves the conditions for moving "+1" across the 'toInt' conversion
+theorem int32_toInt_succ (a : Int32) (halt : a < Int32.maxValue) :
+  (a + 1).toInt = a.toInt + 1 := by
+  rw [Int32.toInt_add]
+  apply Int.bmod_eq_of_le <;> simp
+  · apply Int.le_add_of_sub_right_le
+    apply le_trans _ (Int32.le_toInt a); simp
+  · apply Int.add_lt_of_lt_sub_right
+    exact Int32.lt_iff_toInt_lt.mp halt
+
 -- Proves the conditions for moving addition across the 'toInt' conversion
 theorem int32_toInt_add_of_bounds
   (a b : Int32) (hb : in_bounds_32 (a.toInt + b.toInt)) :

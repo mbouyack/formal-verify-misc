@@ -44,6 +44,16 @@ theorem in_bounds_64_of_abs_lt (n : Int) (h : |n| < 2^63) :
   use le_of_lt (neg_lt.mp ((abs_of_nonpos hneg) ▸ h))
   exact lt_of_le_of_lt hneg (by norm_num)
 
+-- Proves the conditions for moving "+1" across the 'toInt' conversion
+theorem int64_toInt_succ (a : Int64) (halt : a < Int64.maxValue) :
+  (a + 1).toInt = a.toInt + 1 := by
+  rw [Int64.toInt_add]
+  apply Int.bmod_eq_of_le <;> simp
+  · apply Int.le_add_of_sub_right_le
+    apply le_trans _ (Int64.le_toInt a); simp
+  · apply Int.add_lt_of_lt_sub_right
+    exact Int64.lt_iff_toInt_lt.mp halt
+
 -- Proves the conditions for moving addition across the 'toInt' conversion
 theorem int64_toInt_add_of_bounds
   (a b : Int64) (hb : in_bounds_64 (a.toInt + b.toInt)) :
