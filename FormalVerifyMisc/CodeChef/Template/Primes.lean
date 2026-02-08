@@ -484,6 +484,36 @@ def find_next_prime {L : ℕ} (S : Sieve L) : Int32 :=
     exact Int32.lt_iff_toInt_lt.mp S.hppos
   )
 
+-- Prove a lower bound for 'find_next_prime_impl' in the
+-- case where the search doesn't reach the end of the sieve
+theorem find_next_prime_impl_lb {L : ℕ} (S : Sieve L)
+  (n : Int32) (hltn : 1 < n) :
+  (fun p ↦ p.toInt ≠ (L : ℤ) → 2 ≤ p.toInt) (find_next_prime_impl S n hltn) := by
+  dsimp; intro pneL
+  unfold find_next_prime_impl at *; dsimp at *
+  split_ifs at * with h₀ h₁
+  · exact Int32.lt_iff_toInt_lt.mp hltn
+  · apply find_next_prime_impl_lb
+    assumption
+  · absurd pneL
+    have Lnn := Int.natCast_nonneg L
+    have ltL : -2^31 ≤ (L : ℤ) := le_trans (by simp) Lnn
+    have Llt : (L : ℤ) < 2^31 :=
+      lt_trans (Int.ofNat_lt_ofNat_of_lt S.hLlt) (by simp)
+    rw [Int32.toInt_ofInt_of_le ltL Llt]
+termination_by S.divs.size - n.toInt.natAbs
+decreasing_by
+  apply find_next_prime_impl_termination <;> assumption
+
+-- Prove a lower bound for 'find_next_prime' in the
+-- case where the search doesn't reach the end of the sieve
+theorem find_next_prime_lb {L : ℕ} (S : Sieve L) :
+  (fun p ↦ p.toInt ≠ (L : ℤ) → 2 ≤ p.toInt) (find_next_prime S) := by
+  dsimp; intro pneL
+  unfold find_next_prime at *
+  apply find_next_prime_impl_lb
+  assumption
+
 -- 'find_next_prime_impl' always returns a non-negative integer
 theorem find_next_prime_impl_nonneg {L : ℕ} (S : Sieve L)
   (n : Int32) (hltn : 1 < n) :
