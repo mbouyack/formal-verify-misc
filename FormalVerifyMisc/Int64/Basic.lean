@@ -66,12 +66,12 @@ theorem int64_toInt_add_of_add_bounds
   {a b : Int64} {alb aub blb bub : Int}
   (lea : alb ≤ a.toInt) (alt : a.toInt < aub)
   (leb : blb ≤ b.toInt) (blt : b.toInt < bub)
-  (hlb : -2^63 ≤ alb + blb) (hub : aub + bub < 2^63) :
+  (hlb : -2^63 ≤ alb + blb) (hub : aub + bub ≤ 2^63) :
   (a + b).toInt = a.toInt + b.toInt := by
   apply int64_toInt_add_of_bounds
   constructor
   · exact le_trans hlb (Int.add_le_add lea leb)
-  · exact lt_trans (Int.add_lt_add alt blt) hub
+  · exact lt_of_lt_of_le (Int.add_lt_add alt blt) hub
 
 -- Proves the conditions for moving subtraction across the 'toInt' conversion
 theorem int64_toInt_sub_of_bounds

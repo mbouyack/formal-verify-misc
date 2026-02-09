@@ -66,12 +66,12 @@ theorem int32_toInt_add_of_add_bounds
   {a b : Int32} {alb aub blb bub : Int}
   (lea : alb ≤ a.toInt) (alt : a.toInt < aub)
   (leb : blb ≤ b.toInt) (blt : b.toInt < bub)
-  (hlb : -2^31 ≤ alb + blb) (hub : aub + bub < 2^31) :
+  (hlb : -2^31 ≤ alb + blb) (hub : aub + bub ≤ 2^31) :
   (a + b).toInt = a.toInt + b.toInt := by
   apply int32_toInt_add_of_bounds
   constructor
   · exact le_trans hlb (Int.add_le_add lea leb)
-  · exact lt_trans (Int.add_lt_add alt blt) hub
+  · exact lt_of_lt_of_le (Int.add_lt_add alt blt) hub
 
 -- Proves the conditions for moving subtraction across the 'toInt' conversion
 theorem int32_toInt_sub_of_bounds
