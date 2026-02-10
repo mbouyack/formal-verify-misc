@@ -46,6 +46,11 @@ structure Sieve (L : ℕ) where
     (divs[j]'(jlt)).toInt ∣ j ∧
     ∀ y, 1 < y → y ∣ j → (divs[j]'(jlt)).toInt ≤ (y : ℤ)
 
+theorem sieve_length_pos {L : ℕ} (S : Sieve L) : 0 < S.divs.size := by
+  rw [S.hsize]
+  apply Int.lt_of_ofNat_lt_ofNat
+  exact lt_of_lt_of_le S.hipos S.hile
+
 -- Show equivalence for the two ways of expressing the upper bound on an index into S.divs
 theorem lt_sieve_length_iff_of_nonneg
   {L : ℕ} (S : Sieve L) (n : Int32) (hnnn : 0 ≤ n) :
@@ -130,7 +135,7 @@ theorem termination_by_increasing_int32 (cur inc : Int32) (ub : ℕ)
   exact Int.lt_add_of_pos_right _ incpos'
 
 -- The state and constraints required for the 'mark_multiples' loop
-structure MarkMultiplesState where
+@[ext] structure MarkMultiplesState where
   A : Array Int32
   inc : Int32
   cur : Int32
@@ -163,6 +168,12 @@ def mark_multiples_state_of_sieve {L : ℕ} (S : Sieve L) : MarkMultiplesState w
 
 @[simp] theorem mark_multiples_state_of_sieve_size {L : ℕ} (S : Sieve L) :
   (mark_multiples_state_of_sieve S).A.size = S.divs.size := rfl
+
+@[simp] theorem mark_multiples_state_of_sieve_inc {L : ℕ} (S : Sieve L) :
+  (mark_multiples_state_of_sieve S).inc = S.i := rfl
+
+@[simp] theorem mark_multiples_state_of_sieve_cur {L : ℕ} (S : Sieve L) :
+  (mark_multiples_state_of_sieve S).cur = S.i := rfl
 
 -- When adding 'inc' to 'cur' we can move the addition across the 'toInt' conversion
 lemma mms_cur_add_inc_toInt
@@ -246,19 +257,100 @@ def mark_multiples_advance (MMS : MarkMultiplesState)
       rwa [Array.size_set]
 
 -- The size of the MarkMultiplesState doesn't change upon advancing
-theorem mark_multiples_advance_size (MMS : MarkMultiplesState)
+@[simp] theorem mark_multiples_advance_size (MMS : MarkMultiplesState)
   (curlt : MMS.cur.toInt.natAbs < MMS.A.size) :
   (mark_multiples_advance MMS curlt).A.size = MMS.A.size := by
   unfold mark_multiples_advance; dsimp
   split_ifs with h <;> simp
 
+@[simp] theorem mark_multiples_advance_inc (MMS : MarkMultiplesState)
+  (curlt : MMS.cur.toInt.natAbs < MMS.A.size) :
+  (mark_multiples_advance MMS curlt).inc = MMS.inc := rfl
+
 -- After advancing the MarkMultiplesState, the new 'cur' value is
 -- the sum of the old 'cur' value and the old 'inc' value
-theorem mark_multiples_advance_cur_add_inc (MMS : MarkMultiplesState)
+@[simp] theorem mark_multiples_advance_cur (MMS : MarkMultiplesState)
   (curlt : MMS.cur.toInt.natAbs < MMS.A.size) :
   (mark_multiples_advance MMS curlt).cur.toInt = MMS.cur.toInt + MMS.inc.toInt := by
   unfold mark_multiples_advance; dsimp
   exact mms_cur_add_inc_toInt MMS curlt
+
+-- Advancing the 'mark_multiples' loop has no effect
+-- on entries which have already been marked.
+theorem mark_multiples_advance_unchanged_of_marked (MMS : MarkMultiplesState)
+  (curlt : MMS.cur.toInt.natAbs < MMS.A.size) :
+  ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < MMS.A.size) → MMS.A[j] ≠ 0 →
+  (mark_multiples_advance MMS curlt).A[j]'(by
+    rwa [mark_multiples_advance_size]
+  ) = MMS.A[j] := by
+  intro j jpos jlt hAjnz
+  unfold mark_multiples_advance; dsimp
+  split_ifs with h
+  · apply Array.getElem_set_ne
+    contrapose! hAjnz
+    subst hAjnz; assumption
+  · rfl
+
+-- Advancing the 'mark_multiples' loop has no effect
+-- on entries whose indices are not divisible by 'inc'
+theorem mark_multiples_advance_unchanged_of_not_dvd (MMS : MarkMultiplesState)
+  (curlt : MMS.cur.toInt.natAbs < MMS.A.size) :
+  ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < MMS.A.size) → ¬MMS.inc.toInt ∣ (j : ℤ) →
+  (mark_multiples_advance MMS curlt).A[j]'(by
+    rwa [mark_multiples_advance_size]
+  ) = MMS.A[j] := by
+  intro j jpos jlt jndvd
+  unfold mark_multiples_advance; dsimp
+  split_ifs with h
+  · apply Array.getElem_set_ne
+    contrapose! jndvd
+    convert MMS.incdvd
+    rw [← jndvd]; simp
+    exact le_of_lt MMS.curpos
+  · rfl
+
+-- Advancing the 'mark_multiples' loop has no effect
+-- on entries other than 'cur'
+theorem mark_multiples_advance_unchanged_of_not_cur (MMS : MarkMultiplesState)
+  (curlt : MMS.cur.toInt.natAbs < MMS.A.size) :
+  ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < MMS.A.size) → MMS.cur.toInt ≠ j →
+  (mark_multiples_advance MMS curlt).A[j]'(by
+    rwa [mark_multiples_advance_size]
+  ) = MMS.A[j] := by
+  intro j jpos jlt curnej
+  unfold mark_multiples_advance; dsimp
+  split_ifs with h
+  · apply Array.getElem_set_ne
+    contrapose! curnej
+    rw [← curnej]; symm
+    apply Int.ofNat_natAbs_of_nonneg
+    exact le_of_lt MMS.curpos
+  · rfl
+
+-- The first entry in the array is never modifed
+theorem mark_multiples_advance_unchanged_of_first (MMS : MarkMultiplesState)
+  (curlt : MMS.cur.toInt.natAbs < MMS.A.size) :
+  (mark_multiples_advance MMS curlt).A[0]'(by
+    rw [mark_multiples_advance_size]
+    exact Nat.zero_lt_of_lt curlt
+  ) = MMS.A[0] := by
+    unfold mark_multiples_advance; dsimp
+    split_ifs with h
+    · apply Array.getElem_set_ne
+      exact Int.natAbs_ne_zero.mpr (ne_of_lt MMS.curpos).symm
+    · rfl
+
+-- If the current entry was previously zero, 'mark_multiples_advance' will set it to MMS.inc
+theorem mark_multiples_advance_changed (MMS : MarkMultiplesState)
+  (curlt : MMS.cur.toInt.natAbs < MMS.A.size) :
+  MMS.A[MMS.cur.toInt.natAbs] = 0 →
+  (mark_multiples_advance MMS curlt).A[MMS.cur.toInt.natAbs]'(by
+    rwa [mark_multiples_advance_size]
+  ) = MMS.inc := by
+  intro hz
+  unfold mark_multiples_advance; simp
+  rw [getElem_congr_coll (if_pos hz)]
+  apply Array.getElem_set_self
 
 -- Prove 'mark_multiples' terminates
 lemma mark_multiples_terminates (MMS : MarkMultiplesState)
@@ -267,11 +359,12 @@ lemma mark_multiples_terminates (MMS : MarkMultiplesState)
   (fun mms ↦ mms.A.size - mms.cur.toInt.natAbs)
   (mark_multiples_advance MMS curlt) := by
   dsimp
-  rw [mark_multiples_advance_size, mark_multiples_advance_cur_add_inc]
+  rw [mark_multiples_advance_size, mark_multiples_advance_cur]
   apply Nat.sub_lt_sub_left curlt
   apply Int.natAbs_lt_natAbs_of_nonneg_of_lt (le_of_lt MMS.curpos)
   exact Int.lt_add_of_pos_right _ MMS.incpos
 
+-- Recursively mark all multiples using 'mark_multiples_advance'
 def mark_multiples_impl (MMS : MarkMultiplesState) : MarkMultiplesState :=
   if curlt : MMS.cur.toInt.natAbs < MMS.A.size then
     mark_multiples_impl (mark_multiples_advance MMS curlt) else
@@ -280,7 +373,8 @@ termination_by MMS.A.size - MMS.cur.toInt.natAbs
 decreasing_by
   exact mark_multiples_terminates MMS curlt
 
-theorem mark_multiples_impl_size (MMS : MarkMultiplesState) :
+-- Calling 'mark_multiples_impl' has no effect on the array size
+@[simp] theorem mark_multiples_impl_size (MMS : MarkMultiplesState) :
   (mark_multiples_impl MMS).A.size = MMS.A.size := by
   unfold mark_multiples_impl
   split_ifs with h
@@ -290,13 +384,173 @@ termination_by MMS.A.size - MMS.cur.toInt.natAbs
 decreasing_by
   exact mark_multiples_terminates MMS h
 
+-- Any non-zero entries in MMS.A will be unchanged by calling 'mark_multiples_impl'
+theorem mark_multiples_impl_unchanged_of_marked (MMS : MarkMultiplesState) :
+  ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < MMS.A.size) → MMS.A[j]'jlt ≠ 0 →
+  (mark_multiples_impl MMS).A[j]'(by rwa [mark_multiples_impl_size]) = MMS.A[j]'jlt := by
+  intro j jpos jlt hAjnz
+  unfold mark_multiples_impl
+  split_ifs with h
+  · rw [mark_multiples_impl_unchanged_of_marked _ j jpos]
+    · apply mark_multiples_advance_unchanged_of_marked <;> assumption
+    · rwa [mark_multiples_advance_size]
+    · rw [mark_multiples_advance_unchanged_of_marked] <;> assumption
+  · rfl
+termination_by MMS.A.size - MMS.cur.toInt.natAbs
+decreasing_by
+  exact mark_multiples_terminates MMS h
+
+theorem mark_multiples_impl_unchanged_of_not_dvd (MMS : MarkMultiplesState) :
+  ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < MMS.A.size) → ¬MMS.inc.toInt ∣ (j : ℤ) →
+  (mark_multiples_impl MMS).A[j]'(by rwa [mark_multiples_impl_size]) = MMS.A[j]'jlt := by
+  intro j jpos jlt jndvd
+  unfold mark_multiples_impl
+  split_ifs with h
+  · rw [mark_multiples_impl_unchanged_of_not_dvd _ j jpos]
+    · apply mark_multiples_advance_unchanged_of_not_dvd <;> assumption
+    · rwa [mark_multiples_advance_size]
+    · simpa
+  · rfl
+termination_by MMS.A.size - MMS.cur.toInt.natAbs
+decreasing_by
+  exact mark_multiples_terminates MMS h
+
+-- The first entry in the array in never modified
+-- Note that to even be able to state the theorem, we need a proof that the array is non-empty
+theorem mark_multiples_impl_unchanged_of_first (MMS : MarkMultiplesState)
+  {lb : ℕ} (hlb : lb < MMS.A.size) :
+  (mark_multiples_impl MMS).A[0]'(by simp; exact Nat.zero_lt_of_lt hlb) = MMS.A[0] := by
+  unfold mark_multiples_impl
+  split_ifs with h
+  · rw [mark_multiples_impl_unchanged_of_first _ (by simpa)]
+    rw [mark_multiples_advance_unchanged_of_first]
+  · rfl
+termination_by MMS.A.size - MMS.cur.toInt.natAbs
+decreasing_by
+  exact mark_multiples_terminates MMS h
+
+-- Any entry after (and including) the current entry that is zero and has
+-- index divisible by 'inc' will be set to 'inc' by mark_multiples_impl
+theorem mark_multiples_impl_changed (MMS : MarkMultiplesState) :
+  ∀ (j : ℕ), MMS.cur.toInt ≤ j → (jlt : j < MMS.A.size) →
+  MMS.A[j] = 0 → MMS.inc.toInt ∣ (j : ℤ) →
+  (mark_multiples_impl MMS).A[j]'(by rwa [mark_multiples_impl_size]) = MMS.inc := by
+  intro j lej jlt hz hdvd
+  unfold mark_multiples_impl
+  split_ifs with h
+  · -- If cur = j, that entry will be marked by 'mark_multiples_advance'
+    -- but will be unchanged by 'mark_multiples_impl' so that case
+    -- must be dealt with separately.
+    by_cases curj : MMS.cur.toInt = j
+    · apply congr_arg Int.natAbs at curj
+      simp at curj; subst curj
+      rw [mark_multiples_impl_unchanged_of_marked]
+      · apply mark_multiples_advance_changed MMS h hz
+      · apply Int.lt_of_ofNat_lt_ofNat
+        exact lt_of_lt_of_le MMS.curpos lej
+      · simpa
+      · have incnz : MMS.inc ≠ 0 := by
+          symm; apply Int32.ne_of_lt
+          apply Int32.lt_iff_toInt_lt.mpr
+          exact MMS.incpos
+        rwa [mark_multiples_advance_changed]
+        assumption
+    rename' curj => curnej; push_neg at curnej
+    have ltj := lt_of_le_of_ne lej curnej
+    -- Now handle the remaining case where 'mark_multiples_advance' has no
+    -- effect on entry 'j', but 'mark_multiples_impl' does
+    rw [mark_multiples_impl_changed]
+    · simp
+    · simp
+      -- Rewite 'cur' and 'j' as multiples of 'inc'
+      rcases dvd_def.mp hdvd with ⟨kj, hkj⟩
+      rcases dvd_def.mp MMS.incdvd with ⟨kcur, hkcur⟩
+      -- For some reason 'rw at *' doesn't work here
+      rw [hkj]; rw [hkj] at ltj
+      rw [hkcur]; rw [hkcur] at ltj
+      -- Divide out 'inc' from the relevant inequalities
+      nth_rw 2 [← mul_one MMS.inc.toInt]
+      rw [← mul_add]
+      rw [Int.mul_lt_mul_left MMS.incpos] at ltj
+      rw [Int.mul_le_mul_left MMS.incpos]
+      exact Int.add_one_le_of_lt ltj
+    · simpa
+    · rw [mark_multiples_advance_unchanged_of_not_cur] <;> try assumption
+      apply Int.lt_of_ofNat_lt_ofNat
+      exact lt_of_lt_of_le MMS.curpos lej
+    · simpa
+  · absurd h
+    apply lt_of_le_of_lt (Int.le_of_ofNat_le_ofNat _) jlt
+    convert lej
+    exact Int.ofNat_natAbs_of_nonneg (le_of_lt MMS.curpos)
+termination_by MMS.A.size - MMS.cur.toInt.natAbs
+decreasing_by
+  exact mark_multiples_terminates MMS h
+
 -- Extract S.divs and mark every entry which is a multiple of S.i
 def mark_multiples {L : ℕ} (S : Sieve L) : MarkMultiplesState :=
   mark_multiples_impl (mark_multiples_state_of_sieve S)
 
-theorem mark_multiples_size {L : ℕ} (S : Sieve L) :
+-- The size of the marked array is the same as the size of the sieve
+@[simp] theorem mark_multiples_size {L : ℕ} (S : Sieve L) :
   (mark_multiples S).A.size = S.divs.size := by
   unfold mark_multiples
   rw [mark_multiples_impl_size]; simp
+
+-- 'mark_multiples' has no effect on entries in the sieve
+-- that were previous marked
+theorem mark_multiples_unchanged_of_marked {L : ℕ} (S : Sieve L) :
+  ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < S.divs.size) → S.divs[j] ≠ 0 →
+  (mark_multiples S).A[j]'(by rwa [mark_multiples_size]) = S.divs[j] := by
+    intro j jpos jlt hnz
+    unfold mark_multiples
+    rw [mark_multiples_impl_unchanged_of_marked _ j jpos]
+    · rfl
+    · contrapose! hnz
+      convert hnz
+
+-- 'mark_multiples' has no effect on entries in the sieve
+-- whose indices are not divisible by 'inc'
+theorem mark_multiples_unchanged_of_not_dvd {L : ℕ} (S : Sieve L) :
+  ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < S.divs.size) → ¬S.i.toInt ∣ (j : ℤ) →
+  (mark_multiples S).A[j]'(by rwa [mark_multiples_size]) = S.divs[j] := by
+  intro j jpos jlt jndvd
+  unfold mark_multiples
+  rw [mark_multiples_impl_unchanged_of_not_dvd _ j jpos]
+  · rfl
+  · simpa
+
+-- 'mark_multiples' has no effect on the first entry in the sieve
+theorem mark_multiples_unchanged_of_first {L : ℕ} (S : Sieve L) :
+  (mark_multiples S).A[0]'(
+    (mark_multiples_size S) ▸ (sieve_length_pos S)
+  ) = S.divs[0]'(sieve_length_pos S) := by
+  unfold mark_multiples
+  rw [mark_multiples_impl_unchanged_of_first _ (by simp; exact sieve_length_pos S)]
+  rfl
+
+-- Any entry that was zero and has index divisible by 'inc' will be
+-- set to 'inc' by mark_multiples
+theorem mark_multiples_changed {L : ℕ} (S : Sieve L) :
+  ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < S.divs.size) →
+  S.divs[j] = 0 → S.i.toInt ∣ (j : ℤ) →
+  (mark_multiples S).A[j]'(by rwa [mark_multiples_size]) = S.i := by
+  intro j jpos jlt hz hdvd
+  unfold mark_multiples
+  rw [mark_multiples_impl_changed] <;> try simp; try assumption
+  · exact Int.le_of_dvd (Int.ofNat_lt_ofNat_of_lt jpos) hdvd
+  · convert hz
+
+lemma sieve_toInt_index_succ {L : ℕ} (S : Sieve L) :
+  (S.i + 1).toInt = S.i.toInt + 1 := by
+  apply int32_toInt_add_of_bounds
+  constructor
+  · apply le_of_lt
+    apply Int.lt_add_of_sub_right_lt
+    exact lt_trans (by simp) S.hipos
+  · apply Int.add_lt_of_lt_sub_right
+    apply Int.lt_of_le_sub_one (le_of_lt _)
+    apply lt_trans (lt_of_le_of_lt S.hile (Int.ofNat_lt_ofNat_of_lt S.hLlt))
+    simp
 
 end CodeChef
