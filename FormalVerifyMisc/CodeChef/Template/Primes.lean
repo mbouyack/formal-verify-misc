@@ -165,9 +165,6 @@ theorem termination_by_increasing_int32 (cur inc : Int32) (ub : ℕ)
   curpos : 0 < cur.toInt
   incpos : 0 < inc.toInt
   hAslt : A.size < 2^30
-  hmarked : ∀ (j : ℕ),
-    (jpos : 0 < j) → (jlt : j < min cur.toInt A.size) → inc.toInt ∣ (j : ℤ) →
-    A[j]'(Int.lt_of_ofNat_lt_ofNat ((lt_min_iff.mp jlt).2)) ≠ 0
 
 def mark_multiples_state_of_sieve {L : ℕ} (S : Sieve L) : MarkMultiplesState where
   A := S.divs
@@ -177,16 +174,6 @@ def mark_multiples_state_of_sieve {L : ℕ} (S : Sieve L) : MarkMultiplesState w
   curpos := sieve_index_pos S
   incpos := sieve_index_pos S
   hAslt := by rw [S.hsize]; exact S.hLlt
-  hmarked := by
-    intro j jpos jlt dvdj
-    have jlti := (lt_min_iff.mp jlt).1
-    have lej : 1 ≤ j := Nat.add_one_le_of_lt jpos
-    -- Every entry in the sieve between 1 and i is marked
-    apply sieve_marked_of_lt_index S j (lt_of_le_of_ne lej _) jlti
-    intro j1; subst j1
-    -- Now handle the case where j = 1
-    -- This leads to a contradiction because i ∣ j and 1 < i
-    exact not_lt_of_ge (Int.le_of_dvd (by simp) dvdj) jlti
 
 @[simp] theorem mark_multiples_state_of_sieve_size {L : ℕ} (S : Sieve L) :
   (mark_multiples_state_of_sieve S).A.size = S.divs.size := rfl
@@ -231,52 +218,6 @@ def mark_multiples_advance (MMS : MarkMultiplesState)
     split_ifs with h
     · rfl
     · exact Array.size_set curlt
-  hmarked := by
-    -- TODO: This proof seems much longer than necessary.
-    -- Is there anything we can do to shorten / simplify it?
-    intro j jpos jlt jdvd
-    have := mms_cur_add_inc_toInt MMS curlt
-    have incnz : MMS.inc ≠ 0 := by
-      intro hz
-      absurd Int32.toInt_inj.mpr hz; push_neg; symm
-      exact ne_of_lt MMS.incpos
-    by_cases jlt' : j < min MMS.cur.toInt MMS.A.size
-    · obtain ⟨jlt_left, jlt_right⟩ := Int.lt_min.mp jlt'
-      have jlt_left := (Int.lt_min.mp jlt').1
-      have jlt_right := Int.lt_of_ofNat_lt_ofNat (Int.lt_min.mp jlt').2
-      have hAjnz : MMS.A[j]'jlt_right ≠ 0 := by
-        exact MMS.hmarked j jpos jlt' jdvd
-      split_ifs with h
-      · assumption
-      · by_cases curj : MMS.cur.toInt.natAbs = j
-        · rwa [← getElem_congr_idx curj, Array.getElem_set_self]
-          convert curlt using 1
-          exact Array.size_set curlt
-        push_neg at curj
-        rwa [Array.getElem_set_ne curlt jlt_right curj]
-    rename' jlt' => jlb; push_neg at jlb
-    have curlt' := Int.ofNat_lt_ofNat_of_lt curlt
-    rw [Int.ofNat_natAbs_of_nonneg (le_of_lt MMS.curpos)] at curlt'
-    rw [Int.min_eq_left (le_of_lt curlt')] at jlb
-    have jlt' := this ▸ (Int.lt_min.mp jlt).1
-    -- Rewrite 'j' and 'cur' as multiples of 'inc' to prove cur = j
-    rcases dvd_def.mp jdvd with ⟨kj, hkj⟩
-    rcases dvd_def.mp MMS.incdvd with ⟨kcur, hkcur⟩
-    rw [hkj, hkcur] at jlt' jlb
-    rw [Int.mul_le_mul_left MMS.incpos] at jlb
-    nth_rw 3 [← mul_one MMS.inc.toInt] at jlt'
-    rw [← mul_add, Int.mul_lt_mul_left MMS.incpos] at jlt'
-    have hks := le_antisymm (Int.le_of_lt_add_one jlt') jlb
-    rw [hks] at hkj
-    rw [← hkj] at hkcur
-    rename' hkcur => curj
-    have curj' : MMS.cur.toInt.natAbs = j := by
-      rw [curj]; simp
-    split_ifs with h
-    · rw [← getElem_congr_idx curj']
-      assumption
-    · rwa [← getElem_congr_idx curj', Array.getElem_set_self]
-      rwa [Array.size_set]
 
 -- The size of the MarkMultiplesState doesn't change upon advancing
 @[simp] theorem mark_multiples_advance_size (MMS : MarkMultiplesState)
