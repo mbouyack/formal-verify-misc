@@ -26,8 +26,8 @@ structure Sieve (L : ℕ) where
   hLlt : L < 2^30
   -- The entries in the sieve are non-negative
   hdivsnn : ∀ x ∈ divs, 0 ≤ x
-  -- 'i' is positive
-  hipos : 0 < i.toInt
+  -- 'i' is greater than 1
+  hlti : 1 < i.toInt
   -- 'i' is less than or equal to 'L' - the size of the sieve
   -- TODO: Do we actually need this?
   hile : i.toInt ≤ (L : ℤ)
@@ -35,6 +35,9 @@ structure Sieve (L : ℕ) where
   -- is divisible by some prime in 'primes'
   hmarked : ∀ j, (0 < j) → (jlt : j < divs.size) →
     (∃ p ∈ primes, p.toInt ∣ (j : ℤ)) ↔ divs[j] ≠ 0
+  -- The elements of 'primes' are non-negative
+  -- Note that as-stated, 'hpmem_iff' (below) does not rule out this possibility
+  hprimesnn : ∀ p ∈ primes, 0 ≤ p
   -- A natural number is in 'primes' if-and-only-if
   -- it is a prime less than 'i'
   hpmem_iff : ∀ p : ℕ,
@@ -46,10 +49,12 @@ structure Sieve (L : ℕ) where
     (divs[j]'(jlt)).toInt ∣ j ∧
     ∀ y, 1 < y → y ∣ j → (divs[j]'(jlt)).toInt ≤ (y : ℤ)
 
+theorem sieve_index_pos {L : ℕ} (S : Sieve L) : 0 < S.i.toInt := lt_trans (by simp) S.hlti
+
 theorem sieve_length_pos {L : ℕ} (S : Sieve L) : 0 < S.divs.size := by
   rw [S.hsize]
   apply Int.lt_of_ofNat_lt_ofNat
-  exact lt_of_lt_of_le S.hipos S.hile
+  exact lt_of_lt_of_le (sieve_index_pos S) S.hile
 
 -- Show equivalence for the two ways of expressing the upper bound on an index into S.divs
 theorem lt_sieve_length_iff_of_nonneg
@@ -63,6 +68,22 @@ theorem lt_sieve_length_of_lt_index
   rw [S.hsize]
   apply Int.lt_of_ofNat_lt_ofNat
   apply lt_of_lt_of_le jlt S.hile
+
+-- If an entry's index is divisible by some natural number less than S.i, the entry is marked
+-- This is a more useable consequence of 'hmarked'
+theorem sieve_marked_of_dvd_of_lt {L : ℕ} (S : Sieve L) :
+  ∀ (m n : ℕ), 0 < n → (nlt : n < S.divs.size) →
+  m ≠ 1 → m ∣ n → m < S.i.toInt → S.divs[n]'nlt ≠ 0 := by
+  intro m n npos nlt mne1 mdvdn mlt
+  apply (S.hmarked n npos nlt).mp
+  rcases Nat.exists_prime_and_dvd mne1 with ⟨p, pprime, hp⟩
+  have mpos := Nat.pos_of_dvd_of_pos mdvdn npos
+  have plt := lt_of_le_of_lt (Int.ofNat_le_ofNat_of_le (Nat.le_of_dvd mpos hp)) mlt
+  -- Get the Int32 that corresponds to 'p' in 'primes' (it must exist by 'hpmem_iff')
+  rcases Array.exists_of_mem_map ((S.hpmem_iff p).mpr ⟨plt, pprime⟩) with ⟨p', p'mem, hp'p⟩
+  use p', p'mem
+  rw [hp'p]
+  exact Int.ofNat_dvd.mpr (Nat.dvd_trans hp mdvdn)
 
 -- Every entry properly between 1 and 'i' is marked
 -- This is the result of combining 'hmarked' (every entry with a divisor in
@@ -97,11 +118,12 @@ def init_sieve : Sieve SIEVE_SIZE where
   hdivsnn := by
     intro x xmem
     rw [(Array.mem_replicate.mp xmem).2]; rfl
-  hipos := by simp
+  hlti := by simp
   hile := by
     unfold SIEVE_SIZE
     simp
   hmarked := by simp
+  hprimesnn := fun p pmem ↦ False.elim (Array.not_mem_empty _ pmem)
   hpmem_iff := by
     intro p; simp; intro plt
     interval_cases p <;> norm_num
@@ -152,8 +174,8 @@ def mark_multiples_state_of_sieve {L : ℕ} (S : Sieve L) : MarkMultiplesState w
   inc := S.i
   cur := S.i
   incdvd := by simp
-  curpos := S.hipos
-  incpos := S.hipos
+  curpos := sieve_index_pos S
+  incpos := sieve_index_pos S
   hAslt := by rw [S.hsize]; exact S.hLlt
   hmarked := by
     intro j jpos jlt dvdj
@@ -541,16 +563,292 @@ theorem mark_multiples_changed {L : ℕ} (S : Sieve L) :
   · exact Int.le_of_dvd (Int.ofNat_lt_ofNat_of_lt jpos) hdvd
   · convert hz
 
+-- Any entry whose index is divisible by 'inc' will be marked
+-- after calling mark_multiples
+theorem mark_multiples_marked_of_dvd {L : ℕ} (S : Sieve L) :
+  ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < S.divs.size) → S.i.toInt ∣ (j : ℤ) →
+  (mark_multiples S).A[j]'(by rwa [mark_multiples_size]) ≠ 0 := by
+  intro j jpos jlt idvd
+  by_cases h : S.divs[j]'jlt = 0
+  · rw [mark_multiples_changed S j jpos jlt h idvd]; symm
+    exact Int32.ne_of_lt (Int32.lt_iff_toInt_lt.mpr (sieve_index_pos S))
+  push_neg at h
+  rwa [mark_multiples_unchanged_of_marked S j jpos jlt h]
+
 lemma sieve_toInt_index_succ {L : ℕ} (S : Sieve L) :
   (S.i + 1).toInt = S.i.toInt + 1 := by
   apply int32_toInt_add_of_bounds
   constructor
   · apply le_of_lt
     apply Int.lt_add_of_sub_right_lt
-    exact lt_trans (by simp) S.hipos
+    exact lt_trans (by simp) (sieve_index_pos S)
   · apply Int.add_lt_of_lt_sub_right
     apply Int.lt_of_le_sub_one (le_of_lt _)
     apply lt_trans (lt_of_le_of_lt S.hile (Int.ofNat_lt_ofNat_of_lt S.hLlt))
     simp
+
+-- Advance the loop which fills out the sieve, in the case where S.divs[i] = 0
+def advance_sieve_of_entry_eq_zero {L : ℕ} (S : Sieve L)
+  (ilt : S.i.toInt.natAbs < S.divs.size)
+  (hiz : S.divs[S.i.toInt.natAbs]'ilt = 0) : Sieve L where
+  divs := (mark_multiples S).A
+  primes := S.primes.push S.i
+  i := S.i + 1
+  hsize := by
+    rw [mark_multiples_size]
+    exact S.hsize
+  hLlt := S.hLlt
+  hdivsnn := by
+    intro x xmem
+    rcases Array.getElem_of_mem xmem with ⟨j, jlt, hjx⟩
+    have jlt' : j < S.divs.size := by
+      simp at jlt; assumption
+    have hSjnn : 0 ≤ S.divs[j]'(by simp at jlt; assumption) :=
+      S.hdivsnn _ (Array.getElem_mem _)
+    rw [← hjx]
+    by_cases hjz : j = 0
+    · subst hjz
+      rwa [mark_multiples_unchanged_of_first]
+    rename' hjz => hjnz; push_neg at hjnz
+    have jpos : 0 < j := Nat.pos_of_ne_zero hjnz
+    by_cases hmarked : S.divs[j]'jlt' ≠ 0
+    · rw [mark_multiples_unchanged_of_marked] <;> try assumption
+    rename' hmarked => hnmarked; push_neg at hnmarked
+    by_cases hndvd : ¬S.i.toInt ∣ j
+    · rw [mark_multiples_unchanged_of_not_dvd] <;> try assumption
+    rename' hndvd => hdvd; push_neg at hdvd
+    have hSinn : 0 ≤ S.i := by
+      apply Int32.le_iff_toInt_le.mpr
+      exact le_of_lt (sieve_index_pos S)
+    rw [mark_multiples_changed] <;> assumption
+  hlti := by
+    rw [sieve_toInt_index_succ]
+    exact Int.add_lt_add S.hlti one_pos
+  hile := by
+    rw [sieve_toInt_index_succ]
+    apply Int.add_one_le_of_lt
+    rw [← Int.ofNat_inj.mpr S.hsize]
+    convert Int.ofNat_lt_ofNat_of_lt ilt; symm; simp
+    exact le_of_lt (sieve_index_pos S)
+  hmarked := by
+    intro j jpos jlt
+    simp at jlt
+    constructor
+    · intro h
+      rcases h with ⟨p, pmem, hp⟩
+      rcases Array.mem_push.mp pmem with lhs | rhs
+      · have hSjz : S.divs[j] ≠ 0 :=
+          (S.hmarked j jpos jlt).mp ⟨p, lhs, hp⟩
+        rw [mark_multiples_unchanged_of_marked] <;> assumption
+      · rw [rhs] at hp
+        apply mark_multiples_marked_of_dvd <;> assumption
+    · intro h
+      by_cases h' : S.divs[j]'jlt ≠ 0
+      · rcases (S.hmarked j jpos jlt).mpr h' with ⟨p, pmem, hp⟩; use p
+        exact ⟨Array.mem_push_of_mem _ pmem, hp⟩
+      push_neg at h'
+      have hdvd : S.i.toInt ∣ (j : ℤ) := by
+        contrapose! h
+        rwa [mark_multiples_unchanged_of_not_dvd] <;> assumption
+      exact ⟨S.i, Array.mem_push_self, hdvd⟩
+  hprimesnn := by
+    intro p pmem
+    rcases Array.mem_or_eq_of_mem_push pmem with lhs | rfl
+    · exact S.hprimesnn p lhs
+    · exact Int32.le_iff_toInt_le.mpr (le_of_lt (sieve_index_pos S))
+  hpmem_iff := by
+    intro p
+    rw [sieve_toInt_index_succ]
+    constructor
+    · intro pmem
+      rcases Array.exists_of_mem_map pmem with ⟨p', p'mem, hp'⟩
+      rcases Array.mem_or_eq_of_mem_push p'mem with lhs | rfl
+      · have := (S.hpmem_iff p).mp (hp' ▸ (@Array.mem_map_of_mem _ _ _ _ Int32.toInt lhs))
+        exact ⟨Int.lt_add_one_iff.mpr (le_of_lt this.1), this.2⟩
+      · rw [← hp']
+        use Int.lt_add_of_pos_right _ one_pos
+        -- To prove 'p' is prime we need to show that any divisor 'm' is either 1 or p
+        apply Nat.prime_def.mpr
+        have pge2 : 2 ≤ p := by
+          apply Int.le_of_ofNat_le_ofNat
+          exact (hp' ▸ (Int.add_one_le_of_lt S.hlti))
+        use pge2
+        intro m mdvdp
+        have ppos : 0 < p := lt_of_lt_of_le two_pos pge2
+        have mlep : m ≤ p :=
+          Nat.le_of_dvd ppos mdvdp
+        have mpos := Nat.pos_of_dvd_of_pos mdvdp ppos
+        -- Proof by contradiction: assume p is *not* prime
+        -- and show that S.divs[i] must have already been marked
+        contrapose! hiz
+        rcases hiz with ⟨mne1, mnep⟩
+        -- Show 1 < m < p
+        have ltm := lt_of_le_of_ne (Nat.one_le_of_lt mpos) mne1.symm
+        have mlt := lt_of_le_of_ne mlep mnep
+        -- Because m ∣ S.i and m < S.i, S.divs[S.i] is marked
+        rw [getElem_congr_idx (congrArg Int.natAbs hp')]; simp
+        apply sieve_marked_of_dvd_of_lt S m <;> try assumption
+        rw [hp']
+        exact Int.ofNat_lt_ofNat_of_lt mlt
+    · intro ⟨ple, pprime⟩
+      apply Int.le_of_lt_add_one at ple
+      by_cases hpi : (p : ℤ) = S.i.toInt
+      · rw [hpi]
+        exact Array.mem_map_of_mem Array.mem_push_self
+      rename' hpi => pnei; push_neg at pnei
+      have plt := lt_of_le_of_ne ple pnei
+      have pmem := (S.hpmem_iff p).mpr ⟨(lt_of_le_of_ne ple pnei), pprime⟩
+      rcases Array.exists_of_mem_map pmem with ⟨p', p'mem, hp'⟩
+      rw [← hp']
+      exact Array.mem_map_of_mem (Array.mem_push_of_mem _ p'mem)
+  hdivs_dvd := by
+    intro j jlt hAjz
+    simp at jlt
+    -- Handle the case where j = 0
+    by_cases j0 : j = 0
+    · subst j0
+      rw [mark_multiples_unchanged_of_first] at *
+      exact S.hdivs_dvd 0 jlt hAjz
+    rename' j0 => jnz; push_neg at jnz
+    have jpos : 0 < j := Nat.pos_of_ne_zero jnz
+    -- Handle the case where entry j was already marked
+    by_cases hmarked : S.divs[j]'jlt ≠ 0
+    · rw [mark_multiples_unchanged_of_marked] <;> try assumption
+      exact S.hdivs_dvd j jlt hmarked
+    push_neg at hmarked
+    by_cases hdvd : ¬S.i.toInt ∣ j
+    · rw [mark_multiples_unchanged_of_not_dvd] at * <;> try assumption
+      exact S.hdivs_dvd j jlt hAjz
+    push_neg at hdvd
+    rw [mark_multiples_changed] <;> try assumption
+    use hdvd
+    intro y lty ydvd
+    -- Proof by contradiction:
+    -- if y < i, we would have already marked entry j
+    contrapose! hmarked
+    rename' hmarked => ylt
+    apply sieve_marked_of_dvd_of_lt S y j <;> try assumption
+    exact (ne_of_lt lty).symm
+
+-- Advance the loop which fills out the sieve, in the case where S.divs[i] ≠ 0
+def advance_sieve_of_entry_ne_zero {L : ℕ} (S : Sieve L)
+  (ilt : S.i.toInt.natAbs < S.divs.size)
+  (hinz : S.divs[S.i.toInt.natAbs]'ilt ≠ 0) : Sieve L where
+  divs := S.divs
+  primes := S.primes
+  i := S.i + 1
+  hsize := S.hsize
+  hLlt := S.hLlt
+  hdivsnn := S.hdivsnn
+  hlti := by
+    rw [sieve_toInt_index_succ]
+    exact Int.add_lt_add S.hlti one_pos
+  hile := by
+    rw [sieve_toInt_index_succ]
+    apply Int.add_one_le_of_lt
+    convert Int.ofNat_lt_ofNat_of_lt ilt
+    · exact (Int.ofNat_natAbs_of_nonneg (le_of_lt (sieve_index_pos S))).symm
+    · exact S.hsize.symm
+  hmarked := S.hmarked
+  hprimesnn := S.hprimesnn
+  hpmem_iff := by
+    intro p
+    rw [sieve_toInt_index_succ]
+    constructor
+    · intro h
+      obtain ⟨plt, pprime⟩ := (S.hpmem_iff p).mp h
+      exact And.intro (Int.add_lt_add plt one_pos) pprime
+    · -- TODO: Can we make this proof any shorter / simpler?
+      -- It seems unnecessarly complex given that all we're doing is incrementing 'i'
+      intro ⟨plt, pprime⟩
+      apply (S.hpmem_iff p).mpr (And.intro (lt_of_le_of_ne (Int.le_of_lt_add_one plt) _) pprime)
+      intro hpi
+      have ppos : 0 < p := by
+        apply Int.lt_of_ofNat_lt_ofNat
+        rw [hpi]
+        exact sieve_index_pos S
+      -- Since entry 'i' is marked, 'i' is divisible by some element of primes, p'
+      rcases (S.hmarked S.i.toInt.natAbs (by rwa [← hpi]) ilt).mpr hinz with ⟨p', p'mem, p'dvd⟩
+      rw [← hpi] at p'dvd; simp at p'dvd
+      have p'nn : 0 ≤ p'.toInt :=
+        Int32.le_iff_toInt_le.mp (S.hprimesnn p' p'mem)
+      have hp'abs := Int.ofNat_natAbs_of_nonneg p'nn
+      have : p'.toInt < S.i.toInt ∧ Nat.Prime p'.toInt.natAbs := by
+        rw [← hp'abs]
+        apply ((S.hpmem_iff p'.toInt.natAbs).mp _)
+        rw [hp'abs]
+        exact Array.mem_map_of_mem p'mem
+      rcases this with ⟨p'lt, p'prime⟩
+      -- p' is prime, so it cannot be 1
+      have p'ne1 : p'.toInt.natAbs ≠ 1 := by
+        intro p'1
+        rw [p'1] at p'prime
+        exact Nat.prime_one_false p'prime
+      -- Proof by contradiction: show that p cannot be prime
+      absurd (Nat.prime_def.mp pprime).2 p'.toInt.natAbs; push_neg
+      use Int.ofNat_dvd.mp (hp'abs ▸ p'dvd), p'ne1
+      intro h
+      apply Int.ofNat_inj.mpr at h
+      rw [hpi, hp'abs] at h
+      absurd h; push_neg
+      exact ne_of_lt p'lt
+  hdivs_dvd := S.hdivs_dvd
+
+@[simp] theorem advance_sieve_of_entry_eq_zero_size {L : ℕ} (S : Sieve L)
+  (ilt : S.i.toInt.natAbs < S.divs.size)
+  (hiz : S.divs[S.i.toInt.natAbs]'ilt = 0) :
+  (advance_sieve_of_entry_eq_zero S ilt hiz).divs.size = S.divs.size := by
+  repeat rw [Sieve.hsize]
+
+@[simp] theorem advance_sieve_of_entry_ne_zero_size {L : ℕ} (S : Sieve L)
+  (ilt : S.i.toInt.natAbs < S.divs.size)
+  (hinz : S.divs[S.i.toInt.natAbs]'ilt ≠ 0) :
+  (advance_sieve_of_entry_ne_zero S ilt hinz).divs.size = S.divs.size := by
+  repeat rw [Sieve.hsize]
+
+@[simp] theorem advance_sieve_of_entry_eq_zero_index {L : ℕ} (S : Sieve L)
+  (ilt : S.i.toInt.natAbs < S.divs.size)
+  (hiz : S.divs[S.i.toInt.natAbs]'ilt = 0) :
+  (advance_sieve_of_entry_eq_zero S ilt hiz).i = S.i + 1 := rfl
+
+@[simp] theorem advance_sieve_of_entry_ne_zero_index {L : ℕ} (S : Sieve L)
+  (ilt : S.i.toInt.natAbs < S.divs.size)
+  (hinz : S.divs[S.i.toInt.natAbs]'ilt ≠ 0) :
+  (advance_sieve_of_entry_ne_zero S ilt hinz).i = S.i + 1 := rfl
+
+def sieve_of_eratosthenes_impl {L : ℕ} (S : Sieve L) : Sieve L :=
+  if ilt : S.i.toInt.natAbs < S.divs.size then
+  sieve_of_eratosthenes_impl (
+    if hz : S.divs[S.i.toInt.natAbs]'ilt = 0
+    then advance_sieve_of_entry_eq_zero S ilt hz
+    else advance_sieve_of_entry_ne_zero S ilt hz
+  ) else S
+termination_by S.divs.size - S.i.toInt.natAbs
+decreasing_by
+  have ipos : 0 < S.i := by
+    apply Int32.lt_iff_toInt_lt.mpr
+    exact sieve_index_pos S
+  have inn : 0 ≤ S.i := Int32.le_of_lt ipos
+  rw [lt_sieve_length_iff_of_nonneg S _ inn] at ilt
+  split_ifs with h
+  · repeat rw [Sieve.hsize]
+    rw [advance_sieve_of_entry_eq_zero_index]
+    apply termination_by_increasing_int32
+    · assumption
+    · simp
+    · assumption
+    · exact lt_trans S.hlti ilt
+    · exact le_of_lt S.hLlt
+  · repeat rw [Sieve.hsize]
+    rw [advance_sieve_of_entry_ne_zero_index]
+    apply termination_by_increasing_int32
+    · assumption
+    · simp
+    · assumption
+    · exact lt_trans S.hlti ilt
+    · exact le_of_lt S.hLlt
+
+def sieve_of_eratosthenes : Sieve SIEVE_SIZE :=
+  sieve_of_eratosthenes_impl init_sieve
 
 end CodeChef
