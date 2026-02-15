@@ -9,15 +9,17 @@ class SimpleLoopState (α : Type) where
   -- The loop will exit if 'cur' ever meets or exceeds 'finish'
   finish : α → Int32
   -- Function for advancing the state
-  adv : α → α
+  adv : (s : α) → (cur s < finish s) → α
   -- 'inc' must be positive
   hpos : ∀ (s : α), 0 < (inc s)
   -- A proof that the loop execution will not exceed the 32-bit limit
   hsafe : ∀ (s : α), (finish s).toInt + (inc s).toInt ≤ Int32.maxValue.toInt
-  -- Proof that 'adv' increments 'cur' as expected
-  hadv : ∀ (s : α), cur (adv s) = cur s + inc s
+  -- Proof that 'adv' increments 'cur' as long as 'cur' < 'finish'
+  hadv : ∀ s hlt, cur (adv s hlt) = cur s + inc s
+  -- Proof that advancing the state doesn't change 'inc'
+  hinc : ∀ s hlt, inc (adv s hlt) = inc s
   -- Proof that advancing the state doesn't change 'finish'
-  hconst : ∀ (s : α), finish (adv s) = finish s
+  hfinish : ∀ s hlt, finish (adv s hlt) = finish s
 
 -- Map the 32-bit integers to the natural numbers
 -- for the purpose of proving termination
@@ -46,24 +48,15 @@ lemma int32_toNat_for_term_lt_iff (i j : Int32) :
     rw [hrwi, hrwj] at hlt
     exact Int.lt_of_add_lt_add_right hlt
 
-def do_simple_loop {α : Type} [SimpleLoopState α] (s : α) : α :=
-  if SimpleLoopState.cur s < SimpleLoopState.finish s then
-  do_simple_loop (SimpleLoopState.adv s) else s
-termination_by
-  int32_toNat_for_term (SimpleLoopState.finish s) -
-  int32_toNat_for_term (SimpleLoopState.cur s)
-decreasing_by
+-- This result will be useful for proving that the loop terminates,
+-- but will also be useful for clients of this code in proving that
+-- loop state constraints are maintained.
+theorem simple_loop_state_toInt_cur_add_inc {α : Type} [SimpleLoopState α] (s : α)
+  (hlt : SimpleLoopState.cur s < SimpleLoopState.finish s) :
+  (SimpleLoopState.cur s + SimpleLoopState.inc s).toInt =
+  (SimpleLoopState.cur s).toInt + (SimpleLoopState.inc s).toInt := by
   have hpos : (0 : ℤ) < _ := Int32.lt_iff_toInt_lt.mp (SimpleLoopState.hpos s)
-  rename SimpleLoopState.cur s < _ => hlt
-  rw [SimpleLoopState.hconst s]
-  apply Nat.sub_lt_sub_left ((int32_toNat_for_term_lt_iff _ _).mp hlt)
-  rw [SimpleLoopState.hadv s]
-  apply Int.lt_of_ofNat_lt_ofNat
-  unfold int32_toNat_for_term
-  repeat rw [Int.ofNat_natAbs_of_nonneg (int32_toInt_add_maxValue_nonneg _)]
-  apply Int.add_lt_add_right
   rw [int32_toInt_add_of_bounds]
-  · apply (Int.add_zero _) ▸ (Int.add_lt_add_left hpos _)
   constructor
   · exact Int.add_le_add (int32_minval_le_toInt _) (le_of_lt hpos)
   · have hlt' := Int32.lt_iff_toInt_lt.mp hlt
@@ -71,3 +64,72 @@ decreasing_by
     apply lt_of_lt_of_le (Int.add_lt_add_right hlt' inc.toInt)
     apply le_trans (SimpleLoopState.hsafe s)
     rw [Int32.maxValue]; simp
+
+-- Prove termination for 'do_simple_loop'
+lemma simple_loop_term {α : Type} [SimpleLoopState α] (s : α)
+  (hlt : SimpleLoopState.cur s < SimpleLoopState.finish s) :
+  int32_toNat_for_term (SimpleLoopState.finish (SimpleLoopState.adv s hlt)) -
+  int32_toNat_for_term (SimpleLoopState.cur (SimpleLoopState.adv s hlt)) <
+  int32_toNat_for_term (SimpleLoopState.finish s) -
+  int32_toNat_for_term (SimpleLoopState.cur s) := by
+  have hpos : (0 : ℤ) < _ := Int32.lt_iff_toInt_lt.mp (SimpleLoopState.hpos s)
+  rw [SimpleLoopState.hfinish s]
+  apply Nat.sub_lt_sub_left ((int32_toNat_for_term_lt_iff _ _).mp hlt)
+  rw [SimpleLoopState.hadv s]
+  apply Int.lt_of_ofNat_lt_ofNat
+  unfold int32_toNat_for_term
+  repeat rw [Int.ofNat_natAbs_of_nonneg (int32_toInt_add_maxValue_nonneg _)]
+  apply Int.add_lt_add_right
+  rw [simple_loop_state_toInt_cur_add_inc _ hlt]
+  apply (Int.add_zero _) ▸ (Int.add_lt_add_left hpos _)
+
+def do_simple_loop {α : Type} [SimpleLoopState α] (s : α) : α :=
+  if hlt : SimpleLoopState.cur s < SimpleLoopState.finish s then
+  do_simple_loop (SimpleLoopState.adv s hlt) else s
+termination_by
+  int32_toNat_for_term (SimpleLoopState.finish s) -
+  int32_toNat_for_term (SimpleLoopState.cur s)
+decreasing_by
+  exact simple_loop_term s hlt
+
+-- Once the loop is complete, 'finish' ≤ 'cur'
+theorem simple_loop_index_ge {α : Type} [SimpleLoopState α] (s : α) :
+  SimpleLoopState.finish s ≤ SimpleLoopState.cur (do_simple_loop s) := by
+  unfold do_simple_loop
+  split_ifs with h
+  · convert simple_loop_index_ge (SimpleLoopState.adv s h) using 1
+    exact (SimpleLoopState.hfinish s h).symm
+  · apply Int32.le_iff_toInt_le.mpr (Int.le_of_not_gt _)
+    contrapose! h
+    exact Int32.lt_iff_toInt_lt.mpr h
+termination_by
+  int32_toNat_for_term (SimpleLoopState.finish s) -
+  int32_toNat_for_term (SimpleLoopState.cur s)
+decreasing_by
+  exact simple_loop_term s h
+
+-- Elements which are unmodified by advancing the loop
+-- are unmodifed by the full execution of the loop
+theorem simple_loop_val_const {α β : Type} [SimpleLoopState α] (s : α)
+  (f : α → β) (hconst : ∀ s hlt, f (SimpleLoopState.adv s hlt) = f s) :
+  f (do_simple_loop s) = f s := by
+  unfold do_simple_loop
+  split_ifs with h
+  · rw [simple_loop_val_const _ _ hconst]
+    exact hconst s h
+  · rfl
+termination_by
+  int32_toNat_for_term (SimpleLoopState.finish s) -
+  int32_toNat_for_term (SimpleLoopState.cur s)
+decreasing_by
+  exact simple_loop_term s h
+
+-- Specifically, 'finish' is unmodified by the loop's execution
+theorem simple_loop_finish_const {α : Type} [SimpleLoopState α] (s : α) :
+  SimpleLoopState.finish (do_simple_loop s) = SimpleLoopState.finish s :=
+  simple_loop_val_const s SimpleLoopState.finish SimpleLoopState.hfinish
+
+-- Specifically, 'inc' is unmodified by the loop's execution
+theorem simple_loop_inc_const {α : Type} [SimpleLoopState α] (s : α) :
+  SimpleLoopState.inc (do_simple_loop s) = SimpleLoopState.inc s :=
+  simple_loop_val_const s SimpleLoopState.inc SimpleLoopState.hinc
