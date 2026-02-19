@@ -108,21 +108,34 @@ termination_by
 decreasing_by
   exact simple_loop_term s h
 
--- Elements which are unmodified by advancing the loop
--- are unmodifed by the full execution of the loop
-theorem simple_loop_val_const {α β : Type} [SimpleLoopState α] (s : α)
-  (f : α → β) (hconst : ∀ s hlt, f (SimpleLoopState.adv s hlt) = f s) :
-  f (do_simple_loop s) = f s := by
+-- Prove that a property is true for the result of the loop
+-- given that it is invariant across the loop and true of the
+-- initial state.
+theorem simple_loop_prop_const {α : Type} [SimpleLoopState α] (s : α)
+  (prop : α → Prop) (base : prop s)
+  (step : ∀ t hlt, prop t → prop (SimpleLoopState.adv t hlt)) :
+  prop (do_simple_loop s) := by
   unfold do_simple_loop
   split_ifs with h
-  · rw [simple_loop_val_const _ _ hconst]
-    exact hconst s h
-  · rfl
+  · exact simple_loop_prop_const _ prop (step s h base) step
+  · exact base
 termination_by
   int32_toNat_for_term (SimpleLoopState.finish s) -
   int32_toNat_for_term (SimpleLoopState.cur s)
 decreasing_by
   exact simple_loop_term s h
+
+-- Elements which are unmodified by advancing the loop
+-- are unmodifed by the full execution of the loop
+-- This is a special case of 'prop_const' (above)
+theorem simple_loop_val_const {α β : Type} [SimpleLoopState α] (s : α)
+  (f : α → β) (hconst : ∀ t hlt, f (SimpleLoopState.adv t hlt) = f t) :
+  f (do_simple_loop s) = f s := by
+  let prop (t : α) : Prop := f t = f s
+  have base : f s = f s := rfl
+  apply simple_loop_prop_const s prop base
+  unfold prop
+  exact fun t hlt ht ↦ Eq.trans (hconst t hlt) ht
 
 -- Specifically, 'finish' is unmodified by the loop's execution
 theorem simple_loop_finish_const {α : Type} [SimpleLoopState α] (s : α) :
