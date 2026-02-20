@@ -253,23 +253,26 @@ def mark_multiples_advance (MMS : MarkMultiplesState)
   (curlt : MMS.cur.toInt.natAbs < MMS.A.size) :
   (mark_multiples_advance MMS curlt).inc = MMS.inc := rfl
 
+-- Useful lemma for converting between two different statements
+-- of the bounds check
+lemma int32_lt_ofNat_iff_toInt_natAbs_lt {a : Int32} {n : ℕ}
+  (hnn : 0 ≤ a.toInt) (hlt : n < 2^31) :
+  a < Int32.ofNat n ↔ a.toInt.natAbs < n := by
+  rw [← Int.ofNat_lt, Int32.lt_iff_toInt_lt]
+  rw [Int32.toInt_ofNat_of_lt hlt]
+  rw [Int.ofNat_natAbs_of_nonneg hnn]
+
 -- The SimpleLoopState needs the upper bound of the loop stated as an Int32
 -- while the MarkMultipleState has it as a natural number. This lemma
 -- allows us to convert between the two
 lemma mark_multiples_state_size_ofNat_toInt (MMS : MarkMultiplesState) :
-  (Int32.ofNat MMS.A.size).toInt = MMS.A.size := by
-  rw [Int32.toInt_ofNat']
-  apply Int.bmod_eq_of_le
-  · exact le_trans (by simp) (Int.natCast_nonneg _)
-  · unfold Int32.size; simp
-    apply lt_trans MMS.hAslt; simp
+  (Int32.ofNat MMS.A.size).toInt = MMS.A.size :=
+  Int32.toInt_ofNat_of_lt (lt_trans MMS.hAslt (by simp))
 
--- Show equivalence between two different statements of the same constraint
+-- Adapt 'int32_lt_ofNat_iff_toInt_natAbs_lt' for MarkMultiplesState
 lemma mark_multiples_state_cur_lt_size_iff (MMS : MarkMultiplesState) :
-  MMS.cur < Int32.ofNat MMS.A.size ↔ MMS.cur.toInt.natAbs < MMS.A.size := by
-  rw [← Int.ofNat_lt, Int32.lt_iff_toInt_lt]
-  rw [mark_multiples_state_size_ofNat_toInt]
-  rw [Int.ofNat_natAbs_of_nonneg (le_of_lt MMS.curpos)]
+  MMS.cur < Int32.ofNat MMS.A.size ↔ MMS.cur.toInt.natAbs < MMS.A.size :=
+  int32_lt_ofNat_iff_toInt_natAbs_lt (le_of_lt MMS.curpos) (lt_trans MMS.hAslt (by simp))
 
 instance : SimpleLoopState MarkMultiplesState where
   cur := MarkMultiplesState.cur
@@ -401,9 +404,8 @@ def mark_multiples {L : ℕ} (S : Sieve L) : MarkMultiplesState :=
 @[simp] theorem mark_multiples_size {L : ℕ} (S : Sieve L) :
   (mark_multiples S).A.size = S.divs.size := by
   unfold mark_multiples
-  let mms₀ := mark_multiples_state_of_sieve S
   rw [← mark_multiples_state_of_sieve_size S]
-  apply simple_loop_val_const mms₀ (fun mms ↦ mms.A.size)
+  apply simple_loop_val_const (_ : MarkMultiplesState) (fun mms ↦ mms.A.size)
   intro mms hlt
   apply mark_multiples_advance_size mms
 
@@ -777,101 +779,77 @@ def advance_sieve_of_entry_ne_zero {L : ℕ} (S : Sieve L)
       exact ne_of_lt p'lt
   hdivs_dvd := S.hdivs_dvd
 
-@[simp] theorem advance_sieve_of_entry_eq_zero_size {L : ℕ} (S : Sieve L)
-  (ilt : S.i.toInt.natAbs < S.divs.size)
-  (hiz : S.divs[S.i.toInt.natAbs]'ilt = 0) :
-  (advance_sieve_of_entry_eq_zero S ilt hiz).divs.size = S.divs.size := by
+-- Combine the two cases into a single advancement function
+def advance_sieve {L : ℕ} (S : Sieve L)
+  (ilt : S.i.toInt.natAbs < S.divs.size) : Sieve L :=
+  if hz : S.divs[S.i.toInt.natAbs]'ilt = 0
+  then advance_sieve_of_entry_eq_zero S ilt hz
+  else advance_sieve_of_entry_ne_zero S ilt hz
+
+@[simp] theorem advance_sieve_size {L : ℕ} (S : Sieve L)
+  (ilt : S.i.toInt.natAbs < S.divs.size) :
+  (advance_sieve S ilt).divs.size = S.divs.size := by
   repeat rw [Sieve.hsize]
 
-@[simp] theorem advance_sieve_of_entry_ne_zero_size {L : ℕ} (S : Sieve L)
-  (ilt : S.i.toInt.natAbs < S.divs.size)
-  (hinz : S.divs[S.i.toInt.natAbs]'ilt ≠ 0) :
-  (advance_sieve_of_entry_ne_zero S ilt hinz).divs.size = S.divs.size := by
-  repeat rw [Sieve.hsize]
+@[simp] theorem advance_sieve_index {L : ℕ} (S : Sieve L)
+  (ilt : S.i.toInt.natAbs < S.divs.size) :
+  (advance_sieve S ilt).i = S.i + 1 := by
+  unfold advance_sieve
+  split_ifs <;> rfl
 
-@[simp] theorem advance_sieve_of_entry_eq_zero_index {L : ℕ} (S : Sieve L)
-  (ilt : S.i.toInt.natAbs < S.divs.size)
-  (hiz : S.divs[S.i.toInt.natAbs]'ilt = 0) :
-  (advance_sieve_of_entry_eq_zero S ilt hiz).i = S.i + 1 := rfl
+-- Adapt 'int32_lt_ofNat_iff_toInt_natAbs_lt' for Sieve
+lemma sieve_index_lt_size_iff {L : ℕ} (S : Sieve L) :
+  S.i < Int32.ofNat S.divs.size ↔ S.i.toInt.natAbs < S.divs.size :=
+  int32_lt_ofNat_iff_toInt_natAbs_lt
+    (by linarith [S.hlti])
+    (by rw [S.hsize]; exact lt_trans S.hLlt (by simp))
 
-@[simp] theorem advance_sieve_of_entry_ne_zero_index {L : ℕ} (S : Sieve L)
-  (ilt : S.i.toInt.natAbs < S.divs.size)
-  (hinz : S.divs[S.i.toInt.natAbs]'ilt ≠ 0) :
-  (advance_sieve_of_entry_ne_zero S ilt hinz).i = S.i + 1 := rfl
+-- Prove that 'Sieve' implements a simple loop
+instance (L : ℕ) : SimpleLoopState (Sieve L) where
+  cur := Sieve.i
+  inc := fun _ ↦ 1
+  finish := fun S ↦ Int32.ofNat S.divs.size
+  adv := fun S ilt ↦ advance_sieve S (by rwa [← sieve_index_lt_size_iff S])
+  hpos := fun _ ↦ by simp
+  hsafe := by
+    intro S
+    unfold Int32.maxValue
+    rw [S.hsize]
+    rw [Int32.toInt_ofNat_of_lt (lt_trans S.hLlt (by simp))]; simp
+    apply Int.add_one_le_of_lt
+    exact lt_trans (Int.ofNat_lt_ofNat_of_lt S.hLlt) (by simp)
+  hadv := fun S ilt ↦ advance_sieve_index _ _
+  hinc := fun _ _ ↦ rfl
+  hfinish := by simp
 
-def sieve_of_eratosthenes_impl {L : ℕ} (S : Sieve L) : Sieve L :=
-  if ilt : S.i.toInt.natAbs < S.divs.size then
-  sieve_of_eratosthenes_impl (
-    if hz : S.divs[S.i.toInt.natAbs]'ilt = 0
-    then advance_sieve_of_entry_eq_zero S ilt hz
-    else advance_sieve_of_entry_ne_zero S ilt hz
-  ) else S
-termination_by S.divs.size - S.i.toInt.natAbs
-decreasing_by
-  have ipos : 0 < S.i := sieve_index_pos S
-  have inn : 0 ≤ S.i := Int32.le_of_lt ipos
-  rw [lt_sieve_length_iff_of_nonneg S _ inn] at ilt
-  split_ifs with h
-  · repeat rw [Sieve.hsize]
-    rw [advance_sieve_of_entry_eq_zero_index]
-    apply termination_by_increasing_int32
-    · assumption
-    · simp
-    · assumption
-    · exact lt_trans S.hlti ilt
-    · exact le_of_lt S.hLlt
-  · repeat rw [Sieve.hsize]
-    rw [advance_sieve_of_entry_ne_zero_index]
-    apply termination_by_increasing_int32
-    · assumption
-    · simp
-    · assumption
-    · exact lt_trans S.hlti ilt
-    · exact le_of_lt S.hLlt
+@[simp] theorem sieve_loop_cur {L : ℕ} (S : Sieve L) :
+  SimpleLoopState.cur S = S.i := rfl
 
-theorem sieve_of_eratosthenes_impl_index {L : ℕ} (S : Sieve L) :
-  (sieve_of_eratosthenes_impl S).i.toInt = L := by
-  unfold sieve_of_eratosthenes_impl
-  have ipos := sieve_index_pos S
-  have inn := le_of_lt (sieve_index_toInt_pos S)
-  have hrw := lt_sieve_length_iff_of_nonneg S S.i (Int32.le_of_lt ipos)
-  split_ifs with h₀ h₁ <;> try rw [hrw] at h₀
-  · rw [sieve_of_eratosthenes_impl_index]
-  · rw [sieve_of_eratosthenes_impl_index]
-  · push_neg at h₀
-    exact Int.le_antisymm S.hile h₀
-termination_by S.divs.size - S.i.toInt.natAbs
-decreasing_by
-  · rw [advance_sieve_of_entry_eq_zero_size]
-    rw [advance_sieve_of_entry_eq_zero_index]
-    rw [hrw, ← Int.ofNat_inj.mpr S.hsize] at h₀
-    apply termination_by_increasing_int32
-    · assumption
-    · simp
-    · assumption
-    · exact lt_trans S.hlti h₀
-    · rw [S.hsize]
-      exact le_of_lt S.hLlt
-  · rw [advance_sieve_of_entry_ne_zero_size]
-    rw [advance_sieve_of_entry_ne_zero_index]
-    rw [hrw, ← Int.ofNat_inj.mpr S.hsize] at h₀
-    apply termination_by_increasing_int32
-    · assumption
-    · simp
-    · assumption
-    · exact lt_trans S.hlti h₀
-    · rw [S.hsize]
-      exact le_of_lt S.hLlt
+@[simp] theorem sieve_loop_inc {L : ℕ} (S : Sieve L) :
+  SimpleLoopState.inc S = 1 := rfl
+
+@[simp] theorem sieve_loop_finish {L : ℕ} (S : Sieve L) :
+  SimpleLoopState.finish S = Int32.ofNat S.divs.size := rfl
+
+@[simp] theorem sieve_loop_adv {L : ℕ} (S : Sieve L) :
+  SimpleLoopState.adv S = fun hlt ↦
+    advance_sieve S (by rwa [← sieve_index_lt_size_iff S]) := rfl
 
 def sieve_of_eratosthenes : Sieve SIEVE_SIZE :=
-  sieve_of_eratosthenes_impl init_sieve
+  do_simple_loop init_sieve
 
 def primes : Array Int32 := sieve_of_eratosthenes.primes
 def divs : Array Int32 := sieve_of_eratosthenes.divs
 
-theorem sieve_of_eratosthenes_index :
-  sieve_of_eratosthenes.i.toInt = SIEVE_SIZE := by
-  exact sieve_of_eratosthenes_impl_index _
+-- Prove that the value of Sieve.i is at least SIEVE_SIZE
+-- after loop execution is complete
+theorem sieve_of_eratosthenes_index_ge :
+  SIEVE_SIZE ≤ sieve_of_eratosthenes.i.toInt := by
+  have := simple_loop_index_ge init_sieve
+  simp at this
+  apply Int32.le_iff_toInt_le.mp at this
+  rwa [Sieve.hsize, Int32.toInt_ofNat_of_lt] at this
+  unfold SIEVE_SIZE; simp
 
 -- The elements of 'primes' are in-fact prime
 theorem prime_of_mem_primes :
@@ -905,7 +883,7 @@ theorem mem_primes_of_prime_of_lt (p : ℕ) (hprime : Nat.Prime p) (plt : p < SI
   ∃ n ∈ primes, n.toInt = p := by
   let S := sieve_of_eratosthenes
   apply Int.ofNat_lt_ofNat_of_lt at plt
-  rw [← sieve_of_eratosthenes_index] at plt
+  replace plt := lt_of_lt_of_le plt sieve_of_eratosthenes_index_ge
   exact Array.exists_of_mem_map ((S.hpmem_iff _).mpr ⟨plt, hprime⟩)
 
 -- Each entry in 'divs' indicates the smallest divisor of the index of that entry.
@@ -918,7 +896,7 @@ theorem divs_getElem_dvd_and_le :
   let S := sieve_of_eratosthenes
   apply S.hdivs_dvd n nlt
   apply sieve_marked_of_lt_index S n ltn
-  rw [sieve_of_eratosthenes_index, ← S.hsize]
-  exact Int.ofNat_lt_ofNat_of_lt nlt
+  apply lt_of_lt_of_le (Int.ofNat_lt_ofNat_of_lt _) sieve_of_eratosthenes_index_ge
+  rwa [← S.hsize]
 
 end CodeChef

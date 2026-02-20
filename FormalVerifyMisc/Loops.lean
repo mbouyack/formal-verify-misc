@@ -138,11 +138,11 @@ theorem simple_loop_val_const {α β : Type} [SimpleLoopState α] (s : α)
   exact fun t hlt ht ↦ Eq.trans (hconst t hlt) ht
 
 -- Specifically, 'finish' is unmodified by the loop's execution
-theorem simple_loop_finish_const {α : Type} [SimpleLoopState α] (s : α) :
+@[simp] theorem simple_loop_finish_const {α : Type} [SimpleLoopState α] (s : α) :
   SimpleLoopState.finish (do_simple_loop s) = SimpleLoopState.finish s :=
   simple_loop_val_const s SimpleLoopState.finish SimpleLoopState.hfinish
 
 -- Specifically, 'inc' is unmodified by the loop's execution
-theorem simple_loop_inc_const {α : Type} [SimpleLoopState α] (s : α) :
+@[simp] theorem simple_loop_inc_const {α : Type} [SimpleLoopState α] (s : α) :
   SimpleLoopState.inc (do_simple_loop s) = SimpleLoopState.inc s :=
   simple_loop_val_const s SimpleLoopState.inc SimpleLoopState.hinc
