@@ -1,4 +1,6 @@
 import Mathlib.Data.Nat.Prime.Basic
+import Mathlib.RingTheory.Coprime.Lemmas
+import Mathlib.Tactic.NormNum.Prime
 import FormalVerifyMisc.CodeChef.Template.Gcd
 import FormalVerifyMisc.Int64.Abs
 import FormalVerifyMisc.Int64.Mod
@@ -7,6 +9,7 @@ namespace CodeChef
 
 -- Prevent '2^63' from having to be written as '2 ^ 63'
 set_option linter.style.commandStart false
+set_option linter.flexible false
 
 /- The purpose of this file is to verify the implementation of the
    extended eucliean algorithm from the template code I use on codechef.com -/

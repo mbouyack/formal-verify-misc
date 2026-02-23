@@ -1,8 +1,11 @@
-import Mathlib.Tactic
+import Mathlib.Algebra.Order.Group.Abs
+import Mathlib.Algebra.Order.Group.Int
 import Mathlib.Data.Int.Basic
+import Mathlib.Tactic.NormNum
 
 -- Prevent '2^31' from having to be written as '2 ^ 31'
 set_option linter.style.commandStart false
+set_option linter.flexible false
 
 def int32_sign (a : Int32) : Int32 :=
   if a < 0 then -1 else

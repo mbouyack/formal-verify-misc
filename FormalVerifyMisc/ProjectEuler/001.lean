@@ -4,6 +4,8 @@ import Mathlib.Data.Nat.Choose.Basic
 import Mathlib.Tactic.NormNum.Basic
 import FormalVerifyMisc.Common
 
+set_option linter.flexible false
+
 def solve_slow (n : ℕ) : ℕ :=
   if n = 0 then 0 else
   (if 3 ∣ n ∨ 5 ∣ n then n else 0) + solve_slow (n - 1)

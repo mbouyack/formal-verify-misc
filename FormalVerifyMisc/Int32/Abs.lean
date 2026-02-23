@@ -1,8 +1,6 @@
-import Mathlib.Tactic
-import Mathlib.Algebra.Order.Group.Abs
-import Mathlib.Data.Int.Order.Basic
-import Mathlib.Data.Int.Basic
 import FormalVerifyMisc.Int32.Basic
+
+set_option linter.flexible false
 
 -- Int32.abs is not defined in a useful way and there seem to be no
 -- relevant theorems. Intsead define a more useful version

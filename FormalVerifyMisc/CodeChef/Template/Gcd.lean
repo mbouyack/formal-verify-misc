@@ -1,7 +1,10 @@
 import FormalVerifyMisc.Int32.Abs
 import FormalVerifyMisc.Int32.Mod
+import Mathlib.Algebra.Order.Ring.Abs
 
 namespace CodeChef
+
+set_option linter.flexible false
 
 /- The purpose of this file is to verify the implementation of 'gcd' from the
    template code I use on codechef.com -/

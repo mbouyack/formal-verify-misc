@@ -1,8 +1,11 @@
-import Mathlib.Tactic
+import Mathlib.Algebra.Order.Group.Abs
+import Mathlib.Algebra.Order.Group.Int
 import Mathlib.Data.Int.Basic
+import Mathlib.Tactic.NormNum
 
 -- Prevent '2^63' from having to be written as '2 ^ 63'
 set_option linter.style.commandStart false
+set_option linter.flexible false
 
 def int64_sign (a : Int64) : Int64 :=
   if a < 0 then -1 else

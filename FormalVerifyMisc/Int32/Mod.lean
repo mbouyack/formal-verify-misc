@@ -1,5 +1,7 @@
 import FormalVerifyMisc.Int32.Basic
 
+set_option linter.flexible false
+
 -- Any "well-behaved" 32-bit integer mod -2^31 is equal to itself
 theorem int32_mod_minval (a : Int32) (hlb : Int32.minValue < a) : a % Int32.minValue = a := by
   apply Int32.toInt_inj.mp; simp

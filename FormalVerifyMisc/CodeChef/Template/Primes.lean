@@ -1,5 +1,9 @@
 import Init.Data.Array.Basic
 import Init.Data.Array.Lemmas
+import Mathlib.Data.Nat.Prime.Basic
+import Mathlib.Tactic.IntervalCases
+import Mathlib.Tactic.Linarith
+import Mathlib.Tactic.NormNum.Prime
 import FormalVerifyMisc.Int32.Basic
 import FormalVerifyMisc.Loops
 
@@ -10,6 +14,7 @@ namespace CodeChef
 
 -- Prevent '2^31' from having to be written as '2 ^ 31'
 set_option linter.style.commandStart false
+set_option linter.flexible false
 
 def SIEVE_SIZE : ℕ := 1000001
 

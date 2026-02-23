@@ -1,5 +1,7 @@
 import FormalVerifyMisc.Int64.Basic
 
+set_option linter.flexible false
+
 -- Any "well-behaved" 64-bit integer mod -2^63 is equal to itself
 theorem int64_mod_minval (a : Int64) (hlb : Int64.minValue < a) : a % Int64.minValue = a := by
   apply Int64.toInt_inj.mp; simp
