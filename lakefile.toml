@@ -20,4 +20,3 @@ name = "FormalVerifyMisc"
 [[lean_exe]]
 name = "fvm"
 root = "FormalVerifyMisc"
-#supportInterpreter = true
