@@ -17,6 +17,9 @@ set_option linter.style.commandStart false
 set_option linter.flexible false
 
 def SIEVE_SIZE : ℕ := 1000001
+def SIEVE_SIZE_32 : Int32 := 1000001
+
+@[simp] theorem sieve_size_32_toInt : SIEVE_SIZE_32.toInt = SIEVE_SIZE := rfl
 
 structure Sieve (L : ℕ) where
   -- The sieve - with non-zero values indicating divisors
@@ -54,6 +57,7 @@ structure Sieve (L : ℕ) where
   hdivs_dvd : ∀ j, (jlt : j < divs.size) → divs[j]'(jlt) ≠ 0 →
     (divs[j]'(jlt)).toInt ∣ j ∧
     ∀ y, 1 < y → y ∣ j → (divs[j]'(jlt)).toInt ≤ (y : ℤ)
+  hprimessize : primes.size < i.toInt
 
 theorem sieve_index_toInt_pos {L : ℕ} (S : Sieve L) : 0 < S.i.toInt := lt_trans (by simp) S.hlti
 
@@ -141,29 +145,10 @@ def init_sieve : Sieve SIEVE_SIZE where
     constructor
     · absurd hnz; simp
     · intro y lty ydvd; simp
+  hprimessize := by simp
 
--- Prove that a loop that terminates by showing that 'cur' increases by 'inc'
--- on each iteration and that its absolute value never exceeds 'ub'.
---
--- TODO: This will likely be useful in other file as well
--- consider moving it to a separate file.
-theorem termination_by_increasing_int32 (cur inc : Int32) (ub : ℕ)
-  (curpos : 0 < cur) (incpos : 0 < inc)
-  (curlt : cur.toInt < (ub : ℤ)) (inclt : inc.toInt < (ub : ℤ))
-  (uble : ub ≤ 2^30) :
-  ub - (cur + inc).toInt.natAbs < ub - cur.toInt.natAbs := by
-  have curpos' : 0 < cur.toInt := Int32.lt_iff_toInt_lt.mp curpos
-  have incpos' : 0 < inc.toInt := Int32.lt_iff_toInt_lt.mp incpos
-  rw [int32_toInt_add_of_add_bounds
-    (le_of_lt curpos')
-    (lt_of_lt_of_le curlt (Int.ofNat_le_ofNat_of_le uble))
-    (le_of_lt incpos')
-    (lt_of_lt_of_le inclt (Int.ofNat_le_ofNat_of_le uble))
-    (by simp) (by simp)]
-  rw [← Int.ofNat_natAbs_of_nonneg (le_of_lt curpos')] at curlt
-  apply Nat.sub_lt_sub_left (Int.lt_of_ofNat_lt_ofNat curlt)
-  apply Int.natAbs_lt_natAbs_of_nonneg_of_lt (le_of_lt curpos')
-  exact Int.lt_add_of_pos_right _ incpos'
+theorem init_sieve_size : init_sieve.divs.size = SIEVE_SIZE :=
+  Array.size_replicate
 
 -- The state and constraints required for the 'mark_multiples' loop
 @[ext] structure MarkMultiplesState where
@@ -176,28 +161,46 @@ theorem termination_by_increasing_int32 (cur inc : Int32) (ub : ℕ)
   incle : inc.toInt ≤ A.size
   hAslt : A.size < 2^30
 
-def mark_multiples_state_of_sieve {L : ℕ} (S : Sieve L) : MarkMultiplesState where
-  A := S.divs
-  inc := S.i
-  cur := S.i
+-- For performance reasons we can't pass the sieve itself into 'mark_multiples'
+-- Use this structure to easily repackage and pass the relevant theorems
+structure MMSArgs (L : ℕ) where
+  i : Int32
+  hlti : 1 < i.toInt
+  hile : i.toInt ≤ L
+  hLlt : L < 2^30
+
+def mms_args_of_sieve {L : ℕ} (S : Sieve L) : MMSArgs L where
+  i := S.i
+  hlti := S.hlti
+  hile := S.hile
+  hLlt := S.hLlt
+
+def mark_multiples_state_of_sieve {L : ℕ} (A : Array Int32)
+  (hsize : A.size = L) (args : MMSArgs L)  : MarkMultiplesState where
+  inc := args.i
+  cur := args.i
+  A := A
   incdvd := by simp
-  curpos := sieve_index_toInt_pos S
-  incpos := sieve_index_toInt_pos S
-  incle :=
-    le_of_le_of_eq S.hile (Int.ofNat_inj.mpr S.hsize).symm
-  hAslt := by rw [S.hsize]; exact S.hLlt
+  curpos := by linarith [args.hlti]
+  incpos := by linarith [args.hlti]
+  incle := le_of_le_of_eq args.hile (Int.ofNat_inj.mpr hsize).symm
+  hAslt := by rw [hsize]; exact args.hLlt
 
 @[simp] theorem mark_multiples_state_of_sieve_size {L : ℕ} (S : Sieve L) :
-  (mark_multiples_state_of_sieve S).A.size = S.divs.size := rfl
+  (mark_multiples_state_of_sieve
+    S.divs S.hsize (mms_args_of_sieve S)).A.size = S.divs.size := rfl
 
 @[simp] theorem mark_multiples_state_of_sieve_inc {L : ℕ} (S : Sieve L) :
-  (mark_multiples_state_of_sieve S).inc = S.i := rfl
+  (mark_multiples_state_of_sieve
+    S.divs S.hsize (mms_args_of_sieve S)).inc = S.i := rfl
 
 @[simp] theorem mark_multiples_state_of_sieve_cur {L : ℕ} (S : Sieve L) :
-  (mark_multiples_state_of_sieve S).cur = S.i := rfl
+  (mark_multiples_state_of_sieve
+    S.divs S.hsize (mms_args_of_sieve S)).cur = S.i := rfl
 
 @[simp] theorem mark_multiples_state_of_sieve_array {L : ℕ} (S : Sieve L) :
-  (mark_multiples_state_of_sieve S).A = S.divs := rfl
+  (mark_multiples_state_of_sieve
+    S.divs S.hsize (mms_args_of_sieve S)).A = S.divs := rfl
 
 theorem mark_multiples_state_size_pos (MMS : MarkMultiplesState) : 0 < MMS.A.size := by
   apply Int.lt_of_ofNat_lt_ofNat
@@ -401,13 +404,20 @@ theorem mark_multiples_advance_changed (MMS : MarkMultiplesState)
   rw [getElem_congr_coll (if_pos hz)]
   apply Array.getElem_set_self
 
--- Extract S.divs and mark every entry which is a multiple of S.i
-def mark_multiples {L : ℕ} (S : Sieve L) : MarkMultiplesState :=
-  do_simple_loop (mark_multiples_state_of_sieve S)
+/- Mark every entry of 'A' which is a multiple of args.i
+
+   Originally this function took a Sieve as an argument, but because it isn't
+   given exclusive ownership of that Sieve, the entire array was being copied.
+   This change substantially improves the performance of the algorithm at the
+   cost of slightly more verbose code.
+-/
+def mark_multiples {L : ℕ} (A : Array Int32)
+  (hsize : A.size = L) (args : MMSArgs L) : MarkMultiplesState :=
+  do_simple_loop (mark_multiples_state_of_sieve A hsize args)
 
 -- The size of the marked array is the same as the size of the sieve
 @[simp] theorem mark_multiples_size {L : ℕ} (S : Sieve L) :
-  (mark_multiples S).A.size = S.divs.size := by
+  (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).A.size = S.divs.size := by
   unfold mark_multiples
   rw [← mark_multiples_state_of_sieve_size S]
   apply simple_loop_val_const (_ : MarkMultiplesState) (fun mms ↦ mms.A.size)
@@ -416,8 +426,8 @@ def mark_multiples {L : ℕ} (S : Sieve L) : MarkMultiplesState :=
 
 -- The increment of the marked array is the same as S.i
 @[simp] theorem mark_multiples_inc {L : ℕ} (S : Sieve L) :
-  (mark_multiples S).inc = S.i :=
-  simple_loop_inc_const (mark_multiples_state_of_sieve S)
+  (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).inc = S.i :=
+  @simple_loop_inc_const MarkMultiplesState _ _
 
 -- Prove the equivalence between cur < finish in the SimpleLoopState interface
 -- and the corresponding statement in MarkMultiplesState
@@ -429,10 +439,12 @@ lemma mark_multiples_cur_lt_size_iff_cur_lt_finish (MMS : MarkMultiplesState) :
 -- that were previous marked
 theorem mark_multiples_unchanged_of_marked {L : ℕ} (S : Sieve L) :
   ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < S.divs.size) → S.divs[j] ≠ 0 →
-  (mark_multiples S).A[j]'(by rwa [mark_multiples_size]) = S.divs[j] := by
+  (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).A[j]'(by
+    rwa [mark_multiples_size]) = S.divs[j] := by
   unfold mark_multiples
   intro j jpos jlt hnz
-  let mms₀ := mark_multiples_state_of_sieve S
+  let mms₀ := mark_multiples_state_of_sieve
+    S.divs S.hsize (mms_args_of_sieve S)
   let prop (mms : MarkMultiplesState) : Prop :=
     (_ : j < mms.A.size) → mms.A[j] ≠ 0 ∧ mms.A[j] = S.divs[j]
   have base : prop mms₀ := by
@@ -453,9 +465,11 @@ theorem mark_multiples_unchanged_of_marked {L : ℕ} (S : Sieve L) :
 -- whose indices are not divisible by 'inc'
 theorem mark_multiples_unchanged_of_not_dvd {L : ℕ} (S : Sieve L) :
   ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < S.divs.size) → ¬S.i.toInt ∣ (j : ℤ) →
-  (mark_multiples S).A[j]'(by rwa [mark_multiples_size]) = S.divs[j] := by
+  (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).A[j]'(by
+    rwa [mark_multiples_size]) = S.divs[j] := by
   intro j jpos jlt hdvd
-  let mms₀ := mark_multiples_state_of_sieve S
+  let mms₀ := mark_multiples_state_of_sieve
+    S.divs S.hsize (mms_args_of_sieve S)
   let prop (mms : MarkMultiplesState) : Prop :=
     (_ : j < mms.A.size) → ¬mms.inc.toInt ∣ j ∧ mms.A[j] = S.divs[j]
   have base : prop mms₀ := by
@@ -474,10 +488,11 @@ theorem mark_multiples_unchanged_of_not_dvd {L : ℕ} (S : Sieve L) :
 
 -- 'mark_multiples' has no effect on the first entry in the sieve
 theorem mark_multiples_unchanged_of_first {L : ℕ} (S : Sieve L) :
-  (mark_multiples S).A[0]'(
+  (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).A[0]'(
     (mark_multiples_size S) ▸ (sieve_length_pos S)
   ) = S.divs[0]'(sieve_length_pos S) := by
-  let mms₀ := mark_multiples_state_of_sieve S
+  let mms₀ := mark_multiples_state_of_sieve
+    S.divs S.hsize (mms_args_of_sieve S)
   let prop (mms : MarkMultiplesState) : Prop :=
     mms.A[0]'(mark_multiples_state_size_pos mms) = S.divs[0]'(sieve_length_pos S)
   have base : prop mms₀ := by
@@ -495,9 +510,11 @@ theorem mark_multiples_unchanged_of_first {L : ℕ} (S : Sieve L) :
 theorem mark_multiples_changed {L : ℕ} (S : Sieve L) :
   ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < S.divs.size) →
   S.divs[j] = 0 → S.i.toInt ∣ (j : ℤ) →
-  (mark_multiples S).A[j]'(by rwa [mark_multiples_size]) = S.i := by
+  (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).A[j]'(by
+    rwa [mark_multiples_size]) = S.i := by
   intro j jpos _ hz hdvd
-  let mms₀ := mark_multiples_state_of_sieve S
+  let mms₀ := mark_multiples_state_of_sieve
+    S.divs S.hsize (mms_args_of_sieve S)
   let prop (mms : MarkMultiplesState) : Prop :=
     (_ : j < mms.A.size) → mms.inc.toInt = S.i.toInt →
     (mms.cur.toInt ≤ j → mms.A[j] = 0) ∧
@@ -557,7 +574,8 @@ theorem mark_multiples_changed {L : ℕ} (S : Sieve L) :
 -- after calling mark_multiples
 theorem mark_multiples_marked_of_dvd {L : ℕ} (S : Sieve L) :
   ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < S.divs.size) → S.i.toInt ∣ (j : ℤ) →
-  (mark_multiples S).A[j]'(by rwa [mark_multiples_size]) ≠ 0 := by
+  (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).A[j]'(by
+    rwa [mark_multiples_size]) ≠ 0 := by
   intro j jpos jlt idvd
   by_cases h : S.divs[j]'jlt = 0
   · rw [mark_multiples_changed S j jpos jlt h idvd]; symm
@@ -581,7 +599,7 @@ lemma sieve_toInt_index_succ {L : ℕ} (S : Sieve L) :
 def advance_sieve_of_entry_eq_zero {L : ℕ} (S : Sieve L)
   (ilt : S.i.toInt.natAbs < S.divs.size)
   (hiz : S.divs[S.i.toInt.natAbs]'ilt = 0) : Sieve L where
-  divs := (mark_multiples S).A
+  divs := (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).A
   primes := S.primes.push S.i
   i := S.i + 1
   hsize := by
@@ -719,6 +737,10 @@ def advance_sieve_of_entry_eq_zero {L : ℕ} (S : Sieve L)
     rename' hmarked => ylt
     apply sieve_marked_of_dvd_of_lt S y j <;> try assumption
     exact (ne_of_lt lty).symm
+  hprimessize := by
+    rw [sieve_toInt_index_succ, Array.size_push]
+    rw [← Int.ofNat_add_ofNat]
+    exact Int.add_lt_add_right S.hprimessize 1
 
 -- Advance the loop which fills out the sieve, in the case where S.divs[i] ≠ 0
 def advance_sieve_of_entry_ne_zero {L : ℕ} (S : Sieve L)
@@ -783,6 +805,10 @@ def advance_sieve_of_entry_ne_zero {L : ℕ} (S : Sieve L)
       absurd h; push_neg
       exact ne_of_lt p'lt
   hdivs_dvd := S.hdivs_dvd
+  hprimessize := by
+    rw [sieve_toInt_index_succ]
+    apply lt_trans _ (Int.add_lt_add_right S.hprimessize 1)
+    simp
 
 -- Combine the two cases into a single advancement function
 def advance_sieve {L : ℕ} (S : Sieve L)
@@ -856,6 +882,19 @@ theorem sieve_of_eratosthenes_index_ge :
   rwa [Sieve.hsize, Int32.toInt_ofNat_of_lt] at this
   unfold SIEVE_SIZE; simp
 
+theorem sieve_of_eratosthenes_index :
+  sieve_of_eratosthenes.i.toInt = SIEVE_SIZE := by
+  have curlt : SimpleLoopState.cur init_sieve < SimpleLoopState.finish init_sieve := by
+    unfold init_sieve SIEVE_SIZE; simp
+  apply le_antisymm _ sieve_of_eratosthenes_index_ge
+  apply Int.le_of_lt_add_one
+  apply lt_of_lt_of_eq (Int32.lt_iff_toInt_lt.mp (simple_loop_index_lt_of_lt init_sieve curlt))
+  rw [simple_loop_state_toInt_finish_add_inc]
+  rw [simple_loop_finish_const, simple_loop_inc_const]; dsimp
+  rw [Int.add_left_inj, init_sieve_size]
+  apply Int32.toInt_ofNat_of_lt
+  unfold SIEVE_SIZE; simp
+
 -- The elements of 'primes' are in-fact prime
 theorem prime_of_mem_primes :
   ∀ n ∈ primes, ∃ (p : ℕ), n.toInt = p ∧ Nat.Prime p := by
@@ -903,5 +942,17 @@ theorem divs_getElem_dvd_and_le :
   apply sieve_marked_of_lt_index S n ltn
   apply lt_of_lt_of_le (Int.ofNat_lt_ofNat_of_lt _) sieve_of_eratosthenes_index_ge
   rwa [← S.hsize]
+
+set_option linter.style.nativeDecide false
+theorem primes_size : primes.size = 78498 := by native_decide
+
+-- Prove that the size of the primes array is less than the sieve size
+-- Note that this result is less precise than 'primes_size' (above)
+-- but doesn't rely on "native decide"
+theorem primes_size_lt_sieve_size : primes.size < SIEVE_SIZE := by
+  unfold primes
+  apply Int.lt_of_ofNat_lt_ofNat
+  apply lt_of_lt_of_eq sieve_of_eratosthenes.hprimessize
+  exact sieve_of_eratosthenes_index
 
 end CodeChef
