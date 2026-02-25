@@ -1,3 +1,4 @@
+import Mathlib.Tactic.Linarith
 import FormalVerifyMisc.Int32.Basic
 
 class SimpleLoopState (α : Type) where
@@ -64,6 +65,18 @@ theorem simple_loop_state_toInt_cur_add_inc {α : Type} [SimpleLoopState α] (s 
     apply lt_of_lt_of_le (Int.add_lt_add_right hlt' inc.toInt)
     apply le_trans (SimpleLoopState.hsafe s)
     rw [Int32.maxValue]; simp
+
+-- The addition of 'finish' and 'inc' can be carried across the 'toInt' conversion
+theorem simple_loop_state_toInt_finish_add_inc {α : Type} [SimpleLoopState α] (s : α) :
+  (SimpleLoopState.finish s + SimpleLoopState.inc s).toInt =
+  (SimpleLoopState.finish s).toInt + (SimpleLoopState.inc s).toInt := by
+  have hpos : (0 : ℤ) < _ := Int32.lt_iff_toInt_lt.mp (SimpleLoopState.hpos s)
+  convert int32_toInt_add_of_bounds _ _ _
+  constructor
+  · have ltfin := int32_minval_le_toInt (SimpleLoopState.finish s)
+    linarith [ltfin, hpos]
+  · apply lt_of_le_of_lt (SimpleLoopState.hsafe s)
+    unfold Int32.maxValue; simp
 
 -- Prove termination for 'do_simple_loop'
 lemma simple_loop_term {α : Type} [SimpleLoopState α] (s : α)
@@ -146,3 +159,28 @@ theorem simple_loop_val_const {α β : Type} [SimpleLoopState α] (s : α)
 @[simp] theorem simple_loop_inc_const {α : Type} [SimpleLoopState α] (s : α) :
   SimpleLoopState.inc (do_simple_loop s) = SimpleLoopState.inc s :=
   simple_loop_val_const s SimpleLoopState.inc SimpleLoopState.hinc
+
+-- If the initial value of 'cur' is less than 'finish', the final
+-- value will be less than 'finish' + 'inc'
+theorem simple_loop_index_lt_of_lt {α : Type} [SimpleLoopState α] (s : α)
+  (curlt : SimpleLoopState.cur s < SimpleLoopState.finish s) :
+  (fun t ↦ SimpleLoopState.cur t < SimpleLoopState.finish t + SimpleLoopState.inc t)
+    (do_simple_loop s) := by
+  let prop : α → Prop :=
+    fun t ↦ SimpleLoopState.cur t < SimpleLoopState.finish t + SimpleLoopState.inc t
+  have base : prop s := by
+    unfold prop
+    apply Int32.lt_trans curlt
+    apply Int32.lt_iff_toInt_lt.mpr
+    rw [simple_loop_state_toInt_finish_add_inc]
+    have hpos : (0 : ℤ) < _ := Int32.lt_iff_toInt_lt.mp (SimpleLoopState.hpos s)
+    convert (Int.add_zero _) ▸ (Int.add_lt_add_left hpos _)
+  have step : ∀ t hlt, prop t → prop (SimpleLoopState.adv t hlt) := by
+    unfold prop
+    intro t hlt h
+    rw [SimpleLoopState.hadv, SimpleLoopState.hfinish, SimpleLoopState.hinc]
+    apply Int32.lt_iff_toInt_lt.mpr
+    rw [simple_loop_state_toInt_finish_add_inc]
+    rw [simple_loop_state_toInt_cur_add_inc _ hlt]
+    exact Int.add_lt_add_right (Int32.lt_iff_toInt_lt.mp hlt) _
+  exact simple_loop_prop_const _ prop base step
