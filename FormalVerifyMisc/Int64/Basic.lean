@@ -57,6 +57,12 @@ theorem int64_toInt_succ (a : Int64) (halt : a < Int64.maxValue) :
   · apply Int.add_lt_of_lt_sub_right
     exact Int64.lt_iff_toInt_lt.mp halt
 
+-- Alternate version of int32_toInt_succ
+theorem int64_toInt_succ' (a : Int64) (halt : a.toInt < 2^63 - 1) :
+  (a + 1).toInt = a.toInt + 1 := by
+  rw [← Int64.toInt_maxValue, ← Int64.lt_iff_toInt_lt] at halt
+  exact int64_toInt_succ a halt
+
 -- Proves the conditions for moving addition across the 'toInt' conversion
 theorem int64_toInt_add_of_bounds
   (a b : Int64) (hb : in_bounds_64 (a.toInt + b.toInt)) :

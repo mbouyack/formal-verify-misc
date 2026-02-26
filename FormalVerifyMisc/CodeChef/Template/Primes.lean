@@ -57,7 +57,11 @@ structure Sieve (L : ℕ) where
   hdivs_dvd : ∀ j, (jlt : j < divs.size) → divs[j]'(jlt) ≠ 0 →
     (divs[j]'(jlt)).toInt ∣ j ∧
     ∀ y, 1 < y → y ∣ j → (divs[j]'(jlt)).toInt ≤ (y : ℤ)
+  -- The number of elements in 'primes' is less than 'i'
   hprimessize : primes.size < i.toInt
+  -- The elements in 'primes' are strictly increasing
+  hprimesinc : ∀ m n, (mlt : m < n) → (nlt : n < primes.size) →
+    primes[m]'(lt_trans mlt nlt) < primes[n]
 
 theorem sieve_index_toInt_pos {L : ℕ} (S : Sieve L) : 0 < S.i.toInt := lt_trans (by simp) S.hlti
 
@@ -146,6 +150,7 @@ def init_sieve : Sieve SIEVE_SIZE where
     · absurd hnz; simp
     · intro y lty ydvd; simp
   hprimessize := by simp
+  hprimesinc := by simp
 
 theorem init_sieve_size : init_sieve.divs.size = SIEVE_SIZE :=
   Array.size_replicate
@@ -741,6 +746,25 @@ def advance_sieve_of_entry_eq_zero {L : ℕ} (S : Sieve L)
     rw [sieve_toInt_index_succ, Array.size_push]
     rw [← Int.ofNat_add_ofNat]
     exact Int.add_lt_add_right S.hprimessize 1
+  hprimesinc := by
+    intro m n mlt nlt
+    rw [Array.size_push] at nlt
+    have mlt' := lt_of_lt_of_le mlt (Nat.le_of_lt_add_one nlt)
+    rw [Array.getElem_push_lt mlt']
+    by_cases nlt' : n < S.primes.size
+    · rw [Array.getElem_push_lt nlt']
+      exact S.hprimesinc _ _ mlt nlt'
+    rename' nlt' => len; push_neg at len
+    have hns := le_antisymm (Nat.le_of_lt_add_one nlt) len
+    rw [getElem_congr_idx hns, Array.getElem_push_eq]
+    apply Int32.lt_iff_toInt_lt.mpr
+    let p := S.primes[m].toInt.natAbs
+    have pnn : 0 ≤ S.primes[m].toInt :=
+      Int32.le_iff_toInt_le.mp (S.hprimesnn _ (Array.getElem_mem mlt'))
+    rw [← Int.ofNat_natAbs_of_nonneg pnn]
+    apply ((S.hpmem_iff p).mp _).1; unfold p
+    rw [Int.ofNat_natAbs_of_nonneg pnn]
+    apply Array.mem_map_of_mem; simp
 
 -- Advance the loop which fills out the sieve, in the case where S.divs[i] ≠ 0
 def advance_sieve_of_entry_ne_zero {L : ℕ} (S : Sieve L)
@@ -809,6 +833,7 @@ def advance_sieve_of_entry_ne_zero {L : ℕ} (S : Sieve L)
     rw [sieve_toInt_index_succ]
     apply lt_trans _ (Int.add_lt_add_right S.hprimessize 1)
     simp
+  hprimesinc := S.hprimesinc
 
 -- Combine the two cases into a single advancement function
 def advance_sieve {L : ℕ} (S : Sieve L)
@@ -945,6 +970,77 @@ theorem divs_getElem_dvd_and_le :
 
 set_option linter.style.nativeDecide false
 theorem primes_size : primes.size = 78498 := by native_decide
+
+-- In particular, 2 ∈ primes
+theorem primes_two_mem : 2 ∈ primes := by
+  rcases mem_primes_of_prime_of_lt 2
+    (Nat.prime_two) (by unfold SIEVE_SIZE; simp) with ⟨n, nprime, n2⟩
+  convert nprime
+  apply Int32.toInt_inj.mp
+  rw [n2]; simp
+
+-- Since 2 ∈ primes, primes ≠ #[]
+theorem primes_ne_empty : primes ≠ #[] :=
+  Array.ne_empty_of_mem primes_two_mem
+
+-- The last element in 'primes' is 999983
+-- We prove this by showing primes.back is at least that value and that all
+-- larger values less than SIEVE_SIZE are composite
+theorem primes_back : primes.back (Array.size_pos_of_mem primes_two_mem) = 999983 := by
+  have sizepos := (Array.size_pos_of_mem primes_two_mem)
+  -- Let the last element in primes correspond to the natural number 'p'
+  rcases prime_of_mem_primes _ (Array.back_mem sizepos) with ⟨p, hp, pprime⟩
+  apply Int32.toInt_inj.mp; simp
+  rw [hp]
+  apply Int.ofNat_inj.mpr
+  -- Prove primes.back is at least 999983
+  have lep : 999983 ≤ p := by
+    apply Int.le_of_ofNat_le_ofNat
+    rw [← hp]; simp
+    -- Prove that 999983 is in the list and let 'i' be its location
+    have hprime : Nat.Prime 999983 := by norm_num
+    rcases mem_primes_of_prime_of_lt _
+      hprime (by unfold SIEVE_SIZE; simp) with ⟨n, nprime, neq⟩
+    rcases Array.getElem_of_mem nprime with ⟨i, ilt, hpin⟩
+    rw [← Int32.toInt_inj, neq] at hpin; simp at hpin
+    rw [← hpin]
+    apply Int32.le_iff_toInt_le.mp
+    rw [Array.back_eq_getElem sizepos]
+    by_cases hips : i = primes.size - 1
+    · subst hips
+      exact Int32.le_refl _
+    rename' hips => hineps; push_neg at hineps
+    apply Int32.le_of_lt
+    have ilt' : i < primes.size - 1 :=
+      lt_of_le_of_ne (Nat.le_sub_one_of_lt ilt) hineps
+    apply Sieve.hprimesinc _ i (primes.size - 1) ilt'
+  by_contra! pne
+  have ltp := lt_of_le_of_ne lep pne.symm
+  have plt : p < 1000001 := by
+    apply Int.lt_of_ofNat_lt_ofNat
+    rw [← hp]
+    exact lt_of_mem_primes _ (Array.back_mem sizepos)
+  -- Every remaining possible value of p is composite
+  -- Provide a factor pair for each value to show it is not prime
+  apply (Nat.not_prime_iff_exists_mul_eq (le_of_lt (lt_trans (by simp) ltp))).mpr _ pprime
+  interval_cases p
+  · use 2, 499992; simp
+  · use 5, 199997; simp
+  · use 2, 499993; simp
+  · use 3, 333329; simp
+  · use 2, 499994; simp
+  · use 19, 52631; simp
+  · use 2, 499995; simp
+  · use 17, 58823; simp
+  · use 2, 499996; simp
+  · use 3, 333331; simp
+  · use 2, 499997; simp
+  · use 5, 199999; simp
+  · use 2, 499998; simp
+  · use 757, 1321; simp
+  · use 2, 499999; simp
+  · use 3, 333333; simp
+  · use 2, 500000; simp
 
 -- Prove that the size of the primes array is less than the sieve size
 -- Note that this result is less precise than 'primes_size' (above)

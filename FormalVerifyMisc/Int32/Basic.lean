@@ -57,6 +57,12 @@ theorem int32_toInt_succ (a : Int32) (halt : a < Int32.maxValue) :
   · apply Int.add_lt_of_lt_sub_right
     exact Int32.lt_iff_toInt_lt.mp halt
 
+-- Alternate version of int32_toInt_succ
+theorem int32_toInt_succ' (a : Int32) (halt : a.toInt < 2^31 - 1) :
+  (a + 1).toInt = a.toInt + 1 := by
+  rw [← Int32.toInt_maxValue, ← Int32.lt_iff_toInt_lt] at halt
+  exact int32_toInt_succ a halt
+
 -- Proves the conditions for moving addition across the 'toInt' conversion
 theorem int32_toInt_add_of_bounds
   (a b : Int32) (hb : in_bounds_32 (a.toInt + b.toInt)) :
