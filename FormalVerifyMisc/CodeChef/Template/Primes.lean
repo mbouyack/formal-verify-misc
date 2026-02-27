@@ -983,13 +983,15 @@ theorem primes_two_mem : 2 ∈ primes := by
 theorem primes_ne_empty : primes ≠ #[] :=
   Array.ne_empty_of_mem primes_two_mem
 
+theorem primes_size_pos : 0 < primes.size :=
+  Array.size_pos_of_mem primes_two_mem
+
 -- The last element in 'primes' is 999983
 -- We prove this by showing primes.back is at least that value and that all
 -- larger values less than SIEVE_SIZE are composite
 theorem primes_back : primes.back (Array.size_pos_of_mem primes_two_mem) = 999983 := by
-  have sizepos := (Array.size_pos_of_mem primes_two_mem)
   -- Let the last element in primes correspond to the natural number 'p'
-  rcases prime_of_mem_primes _ (Array.back_mem sizepos) with ⟨p, hp, pprime⟩
+  rcases prime_of_mem_primes _ (Array.back_mem primes_size_pos) with ⟨p, hp, pprime⟩
   apply Int32.toInt_inj.mp; simp
   rw [hp]
   apply Int.ofNat_inj.mpr
@@ -1005,7 +1007,7 @@ theorem primes_back : primes.back (Array.size_pos_of_mem primes_two_mem) = 99998
     rw [← Int32.toInt_inj, neq] at hpin; simp at hpin
     rw [← hpin]
     apply Int32.le_iff_toInt_le.mp
-    rw [Array.back_eq_getElem sizepos]
+    rw [Array.back_eq_getElem primes_size_pos]
     by_cases hips : i = primes.size - 1
     · subst hips
       exact Int32.le_refl _
@@ -1019,7 +1021,7 @@ theorem primes_back : primes.back (Array.size_pos_of_mem primes_two_mem) = 99998
   have plt : p < 1000001 := by
     apply Int.lt_of_ofNat_lt_ofNat
     rw [← hp]
-    exact lt_of_mem_primes _ (Array.back_mem sizepos)
+    exact lt_of_mem_primes _ (Array.back_mem primes_size_pos)
   -- Every remaining possible value of p is composite
   -- Provide a factor pair for each value to show it is not prime
   apply (Nat.not_prime_iff_exists_mul_eq (le_of_lt (lt_trans (by simp) ltp))).mpr _ pprime
