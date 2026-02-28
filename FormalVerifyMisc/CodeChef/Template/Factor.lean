@@ -139,4 +139,23 @@ def smallest_divisor (n : Int32) : Int32 :=
     exact lenabs
   )
 
+-- The value returned by 'divisor_search' does in-fact divide 'n'
+theorem divisor_search_impl_dvd (n i : Int32)
+  (ltn : 1 < n) (inn : 0 ≤ i) (ilt : i.toInt.natAbs < primes.size) :
+  (divisor_search_impl n i ltn inn ilt).toInt ∣ n.toInt := by
+  unfold divisor_search_impl; dsimp
+  have ilt' : i.toInt < primes.size :=
+    (int32_toInt_natAbs_lt_iff inn _).mpr ilt
+  have isnn : 0 ≤ i + 1 := int32_succ_nonneg_of_lt_primes_size i inn ilt'
+  split_ifs with h₀ h₁
+  · exact dvd_refl _
+  · apply Int32.toInt_inj.mpr at h₁
+    rw [Int32.toInt_mod] at h₁
+    exact Int.dvd_of_tmod_eq_zero h₁
+  · have islt := int32_succ_toInt_natAbs_lt_of_divlt n i _ ltn inn ilt rfl h₀
+    exact divisor_search_impl_dvd n (i + 1) ltn isnn islt
+termination_by SIEVE_SIZE - i.toInt.natAbs
+decreasing_by
+  exact divisor_search_term i inn ilt'
+
 end CodeChef
