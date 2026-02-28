@@ -968,6 +968,10 @@ theorem divs_getElem_dvd_and_le :
   apply lt_of_lt_of_le (Int.ofNat_lt_ofNat_of_lt _) sieve_of_eratosthenes_index_ge
   rwa [← S.hsize]
 
+@[simp] theorem divs_size : divs.size = SIEVE_SIZE := by
+  unfold divs
+  exact sieve_of_eratosthenes.hsize
+
 set_option linter.style.nativeDecide false
 theorem primes_size : primes.size = 78498 := by native_decide
 
