@@ -214,7 +214,7 @@ theorem mark_multiples_state_size_pos (MMS : MarkMultiplesState) : 0 < MMS.A.siz
 /- When adding 'inc' to 'cur' we can move the addition across the 'toInt' conversion
 
   Note: We would like to use 'simple_loop_state_toInt_cur_add_inc' instead, but we
-  can only use that once we prove 'MarkMultiplesState' is a 'SimpleLoopState', but
+  can only use that once we prove 'MarkMultiplesState' is a 'LoopIncI32', but
   we need this result in order to prove that.
 -/
 lemma mms_cur_add_inc_toInt
@@ -275,7 +275,7 @@ lemma int32_lt_ofNat_iff_toInt_natAbs_lt {a : Int32} {n : ℕ}
   rw [Int32.toInt_ofNat_of_lt hlt]
   rw [Int.ofNat_natAbs_of_nonneg hnn]
 
--- The SimpleLoopState needs the upper bound of the loop stated as an Int32
+-- The LoopIncI32 needs the upper bound of the loop stated as an Int32
 -- while the MarkMultipleState has it as a natural number. This lemma
 -- allows us to convert between the two
 lemma mark_multiples_state_size_ofNat_toInt (MMS : MarkMultiplesState) :
@@ -287,7 +287,7 @@ lemma mark_multiples_state_cur_lt_size_iff (MMS : MarkMultiplesState) :
   MMS.cur < Int32.ofNat MMS.A.size ↔ MMS.cur.toInt.natAbs < MMS.A.size :=
   int32_lt_ofNat_iff_toInt_natAbs_lt (le_of_lt MMS.curpos) (lt_trans MMS.hAslt (by simp))
 
-instance : SimpleLoopState MarkMultiplesState where
+instance : LoopIncI32 MarkMultiplesState where
   cur := MarkMultiplesState.cur
   inc := MarkMultiplesState.inc
   finish := fun mms ↦ Int32.ofNat mms.A.size
@@ -309,16 +309,16 @@ instance : SimpleLoopState MarkMultiplesState where
     simp
 
 @[simp] theorem mark_multiples_state_sls_cur (MMS : MarkMultiplesState) :
-  SimpleLoopState.cur MMS = MMS.cur := rfl
+  LoopIncI32.cur MMS = MMS.cur := rfl
 
 @[simp] theorem mark_multiples_state_sls_inc (MMS : MarkMultiplesState) :
-  SimpleLoopState.inc MMS = MMS.inc := rfl
+  LoopIncI32.inc MMS = MMS.inc := rfl
 
 @[simp] theorem mark_multiples_state_sls_finish (MMS : MarkMultiplesState) :
-  SimpleLoopState.finish MMS = Int32.ofNat MMS.A.size := rfl
+  LoopIncI32.finish MMS = Int32.ofNat MMS.A.size := rfl
 
 @[simp] theorem mark_multiples_state_sls_adv (MMS : MarkMultiplesState) :
-  SimpleLoopState.adv MMS = fun hlt ↦
+  LoopIncI32.adv MMS = fun hlt ↦
   mark_multiples_advance MMS (by
     simp at hlt
     exact ((mark_multiples_state_cur_lt_size_iff MMS).mp hlt)
@@ -418,26 +418,26 @@ theorem mark_multiples_advance_changed (MMS : MarkMultiplesState)
 -/
 def mark_multiples {L : ℕ} (A : Array Int32)
   (hsize : A.size = L) (args : MMSArgs L) : MarkMultiplesState :=
-  do_simple_loop (mark_multiples_state_of_sieve A hsize args)
+  do_loop (mark_multiples_state_of_sieve A hsize args)
 
 -- The size of the marked array is the same as the size of the sieve
 @[simp] theorem mark_multiples_size {L : ℕ} (S : Sieve L) :
   (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).A.size = S.divs.size := by
   unfold mark_multiples
   rw [← mark_multiples_state_of_sieve_size S]
-  apply simple_loop_val_const (_ : MarkMultiplesState) (fun mms ↦ mms.A.size)
+  apply loop_val_const (_ : MarkMultiplesState) (fun mms ↦ mms.A.size)
   intro mms hlt
   apply mark_multiples_advance_size mms
 
 -- The increment of the marked array is the same as S.i
 @[simp] theorem mark_multiples_inc {L : ℕ} (S : Sieve L) :
   (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).inc = S.i :=
-  @simple_loop_inc_const MarkMultiplesState _ _
+  @loop_incI32_inc_const MarkMultiplesState _ _
 
 -- Prove the equivalence between cur < finish in the SimpleLoopState interface
 -- and the corresponding statement in MarkMultiplesState
 lemma mark_multiples_cur_lt_size_iff_cur_lt_finish (MMS : MarkMultiplesState) :
-  MMS.cur.toInt.natAbs < MMS.A.size ↔ SimpleLoopState.cur MMS < SimpleLoopState.finish MMS := by
+  MMS.cur.toInt.natAbs < MMS.A.size ↔ LoopIncI32.cur MMS < LoopIncI32.finish MMS := by
   rw [← mark_multiples_state_cur_lt_size_iff MMS]; simp
 
 -- 'mark_multiples' has no effect on entries in the sieve
@@ -456,7 +456,7 @@ theorem mark_multiples_unchanged_of_marked {L : ℕ} (S : Sieve L) :
     unfold prop mms₀
     intro; simpa
   have step : ∀ t curlt,
-    prop t → prop (SimpleLoopState.adv t curlt) := by
+    prop t → prop (LoopIncI32.adv t curlt) := by
     unfold prop
     intro t curlt h jlt'; simp
     rw [← mark_multiples_cur_lt_size_iff_cur_lt_finish] at curlt
@@ -464,7 +464,10 @@ theorem mark_multiples_unchanged_of_marked {L : ℕ} (S : Sieve L) :
     obtain ⟨hnz', h⟩ := h jlt'
     rw [mark_multiples_advance_unchanged_of_marked t curlt j jpos jlt' hnz']
     exact ⟨hnz', h⟩
-  exact (simple_loop_prop_const mms₀ prop base step _).2
+  apply (loop_prop_const mms₀ prop base _ _).2
+  intro t hterm hpt
+  simp only [LoopBase.term, decide_eq_true_eq] at hterm
+  exact step t (Int32.not_le.mp hterm) hpt
 
 -- 'mark_multiples' has no effect on entries in the sieve
 -- whose indices are not divisible by 'inc'
@@ -481,7 +484,7 @@ theorem mark_multiples_unchanged_of_not_dvd {L : ℕ} (S : Sieve L) :
     unfold prop mms₀
     intro; simpa
   have step : ∀ t curlt,
-    prop t → prop (SimpleLoopState.adv t curlt) := by
+    prop t → prop (LoopIncI32.adv t curlt) := by
     unfold prop
     intro t curlt h jlt'; simp
     rw [← mark_multiples_cur_lt_size_iff_cur_lt_finish] at curlt
@@ -489,7 +492,10 @@ theorem mark_multiples_unchanged_of_not_dvd {L : ℕ} (S : Sieve L) :
     obtain ⟨hdvd', h⟩ := h jlt'
     rw [mark_multiples_advance_unchanged_of_not_dvd t curlt j jpos jlt' hdvd']
     exact ⟨hdvd', h⟩
-  exact (simple_loop_prop_const mms₀ prop base step _).2
+  apply (loop_prop_const mms₀ prop base _ _).2
+  intro t hterm hpt
+  simp only [LoopBase.term, decide_eq_true_eq] at hterm
+  exact step t (Int32.not_le.mp hterm) hpt
 
 -- 'mark_multiples' has no effect on the first entry in the sieve
 theorem mark_multiples_unchanged_of_first {L : ℕ} (S : Sieve L) :
@@ -503,12 +509,15 @@ theorem mark_multiples_unchanged_of_first {L : ℕ} (S : Sieve L) :
   have base : prop mms₀ := by
     unfold prop mms₀; simp
   have step : ∀ t curlt,
-    prop t → prop (SimpleLoopState.adv t curlt) := by
+    prop t → prop (LoopIncI32.adv t curlt) := by
     unfold prop
     intro t curlt h; simp
     rw [← mark_multiples_cur_lt_size_iff_cur_lt_finish] at curlt
     rwa [mark_multiples_advance_unchanged_of_first t curlt]
-  exact simple_loop_prop_const mms₀ prop base step
+  apply loop_prop_const mms₀ prop base
+  intro t hterm hpt
+  simp only [LoopBase.term, decide_eq_true_eq] at hterm
+  exact step t (Int32.not_le.mp hterm) hpt
 
 -- Any entry that was zero and has index divisible by 'inc' will be
 -- set to 'inc' by mark_multiples
@@ -531,10 +540,18 @@ theorem mark_multiples_changed {L : ℕ} (S : Sieve L) :
     intro jlt
     have lej := Int.le_of_dvd (Int.ofNat_lt_ofNat_of_lt jpos) hdvd
     exact False.elim (Int.not_lt_of_ge lej jlt)
-  have step : ∀ t curlt,
-    prop t → prop (SimpleLoopState.adv t curlt) := by
+  have step : ∀ t (hterm : ¬LoopBase.term t = true),
+    prop t → prop (LoopIncI32.adv t (by
+      simp only [LoopBase.term, decide_eq_true_eq] at hterm
+      exact Int32.not_le.mp hterm
+    )) := by
     unfold prop
     intro t curlt h jlt hinc
+    -- TODO: Currently we're working around a mismatch between
+    -- the termination definition in LoopBase and LoopIncI32
+    -- Fix the mismatch
+    simp only [LoopBase.term, decide_eq_true_eq, Int32.not_le] at curlt
+    change LoopIncI32.cur t < LoopIncI32.finish t at curlt
     simp; simp at jlt hinc
     rw [← mark_multiples_cur_lt_size_iff_cur_lt_finish] at curlt
     constructor
@@ -564,14 +581,14 @@ theorem mark_multiples_changed {L : ℕ} (S : Sieve L) :
       rw [Int.mul_le_mul_left t.incpos]
       exact Int.le_of_lt_add_one jlt'
   rw [← mark_multiples_inc]
-  have := simple_loop_prop_const mms₀ prop base step
+  have := loop_prop_const mms₀ prop base step
   apply (this _ (Int32.toInt_inj.mpr (mark_multiples_inc S))).2 _
   -- The final step is to prove that j < cur so the
   -- right-hand side of the property is applicable
   rename j < S.divs.size => jlt
   apply lt_of_lt_of_le (Int.ofNat_lt_ofNat_of_lt jlt)
-  have lecur := Int32.le_iff_toInt_le.mp (simple_loop_index_ge mms₀)
-  rw [mark_multiples_state_sls_finish] at lecur
+  have lecur : (Int32.ofNat mms₀.A.size).toInt ≤ (do_loop mms₀).cur.toInt :=
+    Int32.le_iff_toInt_le.mp (loop_forward_bound_le _ _ mms₀)
   rw [mark_multiples_state_size_ofNat_toInt] at lecur
   exact lecur
 
@@ -861,7 +878,7 @@ lemma sieve_index_lt_size_iff {L : ℕ} (S : Sieve L) :
     (by rw [S.hsize]; exact lt_trans S.hLlt (by simp))
 
 -- Prove that 'Sieve' implements a simple loop
-instance (L : ℕ) : SimpleLoopState (Sieve L) where
+instance (L : ℕ) : LoopIncI32 (Sieve L) where
   cur := Sieve.i
   inc := fun _ ↦ 1
   finish := fun S ↦ Int32.ofNat S.divs.size
@@ -879,20 +896,20 @@ instance (L : ℕ) : SimpleLoopState (Sieve L) where
   hfinish := by simp
 
 @[simp] theorem sieve_loop_cur {L : ℕ} (S : Sieve L) :
-  SimpleLoopState.cur S = S.i := rfl
+  LoopIncI32.cur S = S.i := rfl
 
 @[simp] theorem sieve_loop_inc {L : ℕ} (S : Sieve L) :
-  SimpleLoopState.inc S = 1 := rfl
+  LoopIncI32.inc S = 1 := rfl
 
 @[simp] theorem sieve_loop_finish {L : ℕ} (S : Sieve L) :
-  SimpleLoopState.finish S = Int32.ofNat S.divs.size := rfl
+  LoopIncI32.finish S = Int32.ofNat S.divs.size := rfl
 
 @[simp] theorem sieve_loop_adv {L : ℕ} (S : Sieve L) :
-  SimpleLoopState.adv S = fun hlt ↦
+  LoopIncI32.adv S = fun hlt ↦
     advance_sieve S (by rwa [← sieve_index_lt_size_iff S]) := rfl
 
 def sieve_of_eratosthenes : Sieve SIEVE_SIZE :=
-  do_simple_loop init_sieve
+  do_loop init_sieve
 
 def primes : Array Int32 := sieve_of_eratosthenes.primes
 def divs : Array Int32 := sieve_of_eratosthenes.divs
@@ -901,24 +918,32 @@ def divs : Array Int32 := sieve_of_eratosthenes.divs
 -- after loop execution is complete
 theorem sieve_of_eratosthenes_index_ge :
   SIEVE_SIZE ≤ sieve_of_eratosthenes.i.toInt := by
-  have := simple_loop_index_ge init_sieve
-  simp at this
+  have : Int32.ofNat init_sieve.divs.size ≤ (do_loop init_sieve).i :=
+    loop_forward_bound_le _ _ init_sieve
   apply Int32.le_iff_toInt_le.mp at this
   rwa [Sieve.hsize, Int32.toInt_ofNat_of_lt] at this
   unfold SIEVE_SIZE; simp
 
 theorem sieve_of_eratosthenes_index :
   sieve_of_eratosthenes.i.toInt = SIEVE_SIZE := by
-  have curlt : SimpleLoopState.cur init_sieve < SimpleLoopState.finish init_sieve := by
+  have curlt : LoopIncI32.cur init_sieve < LoopIncI32.finish init_sieve := by
     unfold init_sieve SIEVE_SIZE; simp
   apply le_antisymm _ sieve_of_eratosthenes_index_ge
   apply Int.le_of_lt_add_one
-  apply lt_of_lt_of_eq (Int32.lt_iff_toInt_lt.mp (simple_loop_index_lt_of_lt init_sieve curlt))
-  rw [simple_loop_state_toInt_finish_add_inc]
-  rw [simple_loop_finish_const, simple_loop_inc_const]; dsimp
+  have curlt' : (do_loop init_sieve).i < Int32.ofNat init_sieve.divs.size + 1 :=
+    loop_incI32_term_param_lt_of_lt init_sieve curlt
+  apply lt_of_lt_of_eq (Int32.lt_iff_toInt_lt.mp curlt')
+  have hrw :
+    (Int32.ofNat init_sieve.divs.size + 1).toInt =
+    (Int32.ofNat init_sieve.divs.size).toInt + 1 :=
+    loop_incI32_toInt_finish_add_inc init_sieve
+  rw [hrw]
   rw [Int.add_left_inj, init_sieve_size]
   apply Int32.toInt_ofNat_of_lt
   unfold SIEVE_SIZE; simp
+
+theorem primes_nonneg : ∀ n ∈ primes, 0 ≤ n :=
+  fun n nmem ↦ sieve_of_eratosthenes.hprimesnn n nmem
 
 -- The elements of 'primes' are in-fact prime
 theorem prime_of_mem_primes :
@@ -932,6 +957,14 @@ theorem prime_of_mem_primes :
   apply ((S.hpmem_iff n.toInt.natAbs).mp _).2
   rw [habs]
   exact Array.mem_map_of_mem nmem
+
+-- The elements of 'primes' are positive
+theorem primes_pos : ∀ n ∈ primes, 0 < n := by
+  intro n nmem
+  apply Int32.lt_iff_toInt_lt.mpr
+  rcases prime_of_mem_primes n nmem with ⟨p, hp, pprime⟩
+  rw [hp]
+  exact Int.ofNat_lt_ofNat_of_lt (Nat.Prime.pos pprime)
 
 -- All elements of 'primes' are less than SIEVE_SIZE
 theorem lt_of_mem_primes :
