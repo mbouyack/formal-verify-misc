@@ -18,7 +18,20 @@ termination_by LoopBase.fdec s
 decreasing_by
   exact LoopBase.hdec s h
 
-alias LoopReverse := LoopBase
+-- Loop which continues until some parameter (of type 'β') falls to some lower bound
+-- 'β' is typically of type Int32, Int64, UInt32, or UInt64
+class LoopReverse (α : Type) (β : outParam Type)
+  [LE β] [DecidableRel (· ≤ · : β → β → Prop)] where
+  -- Lower bound for loop execution
+  bound : α → β
+  -- A map from the current loop state to β - used to check for termination
+  fdec : α → β
+  -- Function for advancing the loop state
+  fadv : (s : α) → ¬decide (fdec s ≤ bound s) = true → α
+  -- Proof that 'fdec' decreases as 'fadv' is called repeatedly
+  hdec : ∀ s h, ¬fdec s ≤ fdec (fadv s h)
+  -- Proof that the bound doesn't change as 'fadv' is called
+  hbound : ∀ s h, bound (fadv s h) = bound s
 
 -- Loop which continues until some parameter (of type 'β') exceeds some upper bound
 -- 'β' is typically of type Int32, Int64, UInt32, or UInt64
@@ -39,6 +52,42 @@ class LoopForward (α : Type) (β : outParam Type)
 -- Used in proving loop termination
 class TerminationParam (β : Type) [LE β] where
   embed : OrderEmbedding β ℕ
+
+-- Prove that a LoopReverse' is also a 'LoopBase'
+instance (α β : Type)
+  [LE β] [DecidableRel (· ≤ · : β → β → Prop)]
+  [TerminationParam β] [LoopReverse α β] : LoopBase α where
+  term := fun s ↦ decide (LoopReverse.fdec s ≤ LoopReverse.bound s)
+  adv := LoopReverse.fadv
+  fdec := fun s ↦ TerminationParam.embed (LoopReverse.fdec s)
+  hdec := by
+    intro s h
+    by_contra! h'
+    exact LoopReverse.hdec s h (TerminationParam.embed.map_rel_iff'.mp h')
+
+-- Prove that a LoopForward' is also a 'LoopBase'
+instance (α β : Type)
+  [LE β] [DecidableRel (· ≤ · : β → β → Prop)]
+  [TerminationParam β] [LoopForward α β] : LoopBase α where
+  term := fun s ↦ decide (LoopForward.bound s ≤ LoopForward.finc s)
+  adv := LoopForward.fadv
+  fdec := fun s ↦
+    TerminationParam.embed (LoopForward.bound s) -
+    TerminationParam.embed (LoopForward.finc s)
+  hdec := by
+    intro s h
+    rw [LoopForward.hbound]
+    by_contra! h'
+    let embed : β ↪o ℕ := TerminationParam.embed
+    by_cases hle :
+      embed (LoopForward.finc (LoopForward.fadv s h)) ≤ embed (LoopForward.bound s)
+    · apply LoopForward.hinc s h
+      exact embed.map_rel_iff'.mp (Nat.le_of_sub_le_sub_left hle h')
+    rename' hle => hlt; push_neg at hlt
+    rw [Nat.sub_eq_zero_of_le (le_of_lt hlt)] at h'
+    simp only [decide_eq_true_eq] at h
+    apply h (embed.map_rel_iff'.mp _)
+    exact Nat.le_of_sub_eq_zero (Nat.eq_zero_of_le_zero h')
 
 -- Mapping used to embed Int32 into the natural numbers
 def int32_embed_toFun (i : Int32) := (i.toInt + 2^31).natAbs
@@ -66,30 +115,6 @@ instance : TerminationParam Int32 where
       rw [int32_embed_toFun_toInt, int32_embed_toFun_toInt]
       rw [Int.add_le_add_iff_right, Int32.le_iff_toInt_le]
   }
-
--- Prove that a LoopForward' is also a 'LoopBase'
-instance (α β : Type)
-  [LE β] [DecidableRel (· ≤ · : β → β → Prop)]
-  [TerminationParam β] [LoopForward α β] : LoopBase α where
-  term := fun s ↦ decide (LoopForward.bound s ≤ LoopForward.finc s)
-  adv := LoopForward.fadv
-  fdec := fun s ↦
-    TerminationParam.embed (LoopForward.bound s) -
-    TerminationParam.embed (LoopForward.finc s)
-  hdec := by
-    intro s h
-    rw [LoopForward.hbound]
-    by_contra! h'
-    let embed : β ↪o ℕ := TerminationParam.embed
-    by_cases hle :
-      embed (LoopForward.finc (LoopForward.fadv s h)) ≤ embed (LoopForward.bound s)
-    · apply LoopForward.hinc s h
-      exact embed.map_rel_iff'.mp (Nat.le_of_sub_le_sub_left hle h')
-    rename' hle => hlt; push_neg at hlt
-    rw [Nat.sub_eq_zero_of_le (le_of_lt hlt)] at h'
-    simp only [decide_eq_true_eq] at h
-    apply h (embed.map_rel_iff'.mp _)
-    exact Nat.le_of_sub_eq_zero (Nat.eq_zero_of_le_zero h')
 
 -- A loop that advances by incrementing a 32-bit integer
 class LoopIncI32 (α : Type) where
