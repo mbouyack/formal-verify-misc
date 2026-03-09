@@ -292,7 +292,10 @@ instance : LoopIncI32 MarkMultiplesState where
   inc := MarkMultiplesState.inc
   finish := fun mms ↦ Int32.ofNat mms.A.size
   adv := fun mms hlt ↦ mark_multiples_advance mms
-    ((mark_multiples_state_cur_lt_size_iff mms).mp hlt)
+    ((mark_multiples_state_cur_lt_size_iff mms).mp (by
+      simp only [decide_eq_true_eq, Int32.not_le] at hlt
+      assumption
+    ))
   hpos :=
     fun mms ↦ Int32.lt_iff_toInt_lt.mpr (Int32.toInt_zero ▸ mms.incpos)
   hsafe := by
@@ -459,15 +462,13 @@ theorem mark_multiples_unchanged_of_marked {L : ℕ} (S : Sieve L) :
     prop t → prop (LoopIncI32.adv t curlt) := by
     unfold prop
     intro t curlt h jlt'; simp
+    simp only [decide_eq_true_eq, Int32.not_le] at curlt
     rw [← mark_multiples_cur_lt_size_iff_cur_lt_finish] at curlt
     simp at jlt'
     obtain ⟨hnz', h⟩ := h jlt'
     rw [mark_multiples_advance_unchanged_of_marked t curlt j jpos jlt' hnz']
     exact ⟨hnz', h⟩
-  apply (loop_prop_const mms₀ prop base _ _).2
-  intro t hterm hpt
-  simp only [LoopBase.term, decide_eq_true_eq] at hterm
-  exact step t (Int32.not_le.mp hterm) hpt
+  exact (loop_prop_const mms₀ prop base step _).2
 
 -- 'mark_multiples' has no effect on entries in the sieve
 -- whose indices are not divisible by 'inc'
@@ -487,15 +488,13 @@ theorem mark_multiples_unchanged_of_not_dvd {L : ℕ} (S : Sieve L) :
     prop t → prop (LoopIncI32.adv t curlt) := by
     unfold prop
     intro t curlt h jlt'; simp
+    simp only [decide_eq_true_eq, Int32.not_le] at curlt
     rw [← mark_multiples_cur_lt_size_iff_cur_lt_finish] at curlt
     simp at jlt'
     obtain ⟨hdvd', h⟩ := h jlt'
     rw [mark_multiples_advance_unchanged_of_not_dvd t curlt j jpos jlt' hdvd']
     exact ⟨hdvd', h⟩
-  apply (loop_prop_const mms₀ prop base _ _).2
-  intro t hterm hpt
-  simp only [LoopBase.term, decide_eq_true_eq] at hterm
-  exact step t (Int32.not_le.mp hterm) hpt
+  exact (loop_prop_const mms₀ prop base step _).2
 
 -- 'mark_multiples' has no effect on the first entry in the sieve
 theorem mark_multiples_unchanged_of_first {L : ℕ} (S : Sieve L) :
@@ -512,12 +511,10 @@ theorem mark_multiples_unchanged_of_first {L : ℕ} (S : Sieve L) :
     prop t → prop (LoopIncI32.adv t curlt) := by
     unfold prop
     intro t curlt h; simp
+    simp only [decide_eq_true_eq, Int32.not_le] at curlt
     rw [← mark_multiples_cur_lt_size_iff_cur_lt_finish] at curlt
     rwa [mark_multiples_advance_unchanged_of_first t curlt]
-  apply loop_prop_const mms₀ prop base
-  intro t hterm hpt
-  simp only [LoopBase.term, decide_eq_true_eq] at hterm
-  exact step t (Int32.not_le.mp hterm) hpt
+  exact loop_prop_const mms₀ prop base step
 
 -- Any entry that was zero and has index divisible by 'inc' will be
 -- set to 'inc' by mark_multiples
@@ -540,17 +537,11 @@ theorem mark_multiples_changed {L : ℕ} (S : Sieve L) :
     intro jlt
     have lej := Int.le_of_dvd (Int.ofNat_lt_ofNat_of_lt jpos) hdvd
     exact False.elim (Int.not_lt_of_ge lej jlt)
-  have step : ∀ t (hterm : ¬LoopBase.term t = true),
-    prop t → prop (LoopIncI32.adv t (by
-      simp only [LoopBase.term, decide_eq_true_eq] at hterm
-      exact Int32.not_le.mp hterm
-    )) := by
+  have step : ∀ t hterm,
+    prop t → prop (LoopIncI32.adv t hterm) := by
     unfold prop
     intro t curlt h jlt hinc
-    -- TODO: Currently we're working around a mismatch between
-    -- the termination definition in LoopBase and LoopIncI32
-    -- Fix the mismatch
-    simp only [LoopBase.term, decide_eq_true_eq, Int32.not_le] at curlt
+    simp only [decide_eq_true_eq, Int32.not_le] at curlt
     change LoopIncI32.cur t < LoopIncI32.finish t at curlt
     simp; simp at jlt hinc
     rw [← mark_multiples_cur_lt_size_iff_cur_lt_finish] at curlt
@@ -882,7 +873,10 @@ instance (L : ℕ) : LoopIncI32 (Sieve L) where
   cur := Sieve.i
   inc := fun _ ↦ 1
   finish := fun S ↦ Int32.ofNat S.divs.size
-  adv := fun S ilt ↦ advance_sieve S (by rwa [← sieve_index_lt_size_iff S])
+  adv := fun S ilt ↦ advance_sieve S (by
+    simp only [decide_eq_true_eq, Int32.not_le] at ilt
+    rwa [← sieve_index_lt_size_iff]
+  )
   hpos := fun _ ↦ by simp
   hsafe := by
     intro S
@@ -906,7 +900,10 @@ instance (L : ℕ) : LoopIncI32 (Sieve L) where
 
 @[simp] theorem sieve_loop_adv {L : ℕ} (S : Sieve L) :
   LoopIncI32.adv S = fun hlt ↦
-    advance_sieve S (by rwa [← sieve_index_lt_size_iff S]) := rfl
+    advance_sieve S (by
+      simp only [decide_eq_true_eq, Int32.not_le] at hlt
+      rwa [← sieve_index_lt_size_iff S]
+    ) := rfl
 
 def sieve_of_eratosthenes : Sieve SIEVE_SIZE :=
   do_loop init_sieve
