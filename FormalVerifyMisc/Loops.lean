@@ -1,5 +1,5 @@
-import Mathlib.Tactic.Linarith
 import FormalVerifyMisc.Int32.Basic
+import FormalVerifyMisc.Iterator
 
 -- A loop which proves termination by mapping its state to decreasing natural numbers
 class LoopBase (α : Type) where
@@ -88,6 +88,32 @@ instance (α β : Type)
     simp only [decide_eq_true_eq] at h
     apply h (embed.map_rel_iff'.mp _)
     exact Nat.le_of_sub_eq_zero (Nat.eq_zero_of_le_zero h')
+
+-- Define a loop which uses an iterator
+class LoopIterator (α : Type) (β : outParam Type) [DecidableEq β] [Iterator β] where
+  iter : α → β
+  adv : (s : α) → (¬iter s = Iterator.End) → α
+  hadv : ∀ s h, iter (adv s h) = Iterator.next (iter s)
+
+-- Prove that 'LoopIterator' meets the requirements of LoopBase
+instance (α β : Type) [DecidableEq β] [Iterator β] [LoopIterator α β] : LoopBase α where
+  term := fun s ↦ (LoopIterator.iter s) = Iterator.End
+  adv := fun s h ↦ LoopIterator.adv s (by rwa [decide_eq_true_eq] at h)
+  fdec := fun s ↦ Nat.find (iterate_eq_end (LoopIterator.iter s))
+  hdec := by
+    intro s h
+    rw [decide_eq_true_eq] at h
+    rw [← Nat.add_one_lt_add_one_iff]
+    convert Nat.lt_add_one _
+    convert Nat.find_comp_succ _ _ _ using 1
+    · rw [Nat.add_one_inj]
+      apply Nat.find_congr'
+      intro n
+      rw [LoopIterator.hadv, Function.iterate_succ_apply]
+    · rcases iterate_eq_end (LoopIterator.iter s) with ⟨n, hn⟩
+      use n;
+      rw [Function.iterate_succ_apply', hn, Iterator.hend]
+    · rwa [Function.iterate_zero, id]
 
 -- Mapping used to embed Int32 into the natural numbers
 def int32_embed_toFun (i : Int32) := (i.toInt + 2^31).natAbs
