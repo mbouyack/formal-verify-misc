@@ -5,6 +5,7 @@ import Mathlib.Tactic.IntervalCases
 import Mathlib.Tactic.Linarith
 import Mathlib.Tactic.NormNum.Prime
 import FormalVerifyMisc.Int32.Basic
+import FormalVerifyMisc.Iterator
 import FormalVerifyMisc.Loops
 
 namespace CodeChef
@@ -21,25 +22,48 @@ def SIEVE_SIZE_32 : Int32 := 1000001
 
 @[simp] theorem sieve_size_32_toInt : SIEVE_SIZE_32.toInt = SIEVE_SIZE := rfl
 
-structure Sieve (L : Int32) where
+structure SieveParams where
+  -- The length of the sieve
+  L : Int32
+  -- The sieve size must be at least 2
+  hleL : 2 ≤ L
+  -- The length of the sieve has an upper bound
+  -- This is required to avoid exceeding Int32.maxValue
+  hLlt : L < 2^30
+
+-- Function to construct an iterator for the sieve
+def SieveIterParams (P : SieveParams) : IteratorInt32Params where
+  start := 2
+  finish := P.L
+  inc := 1
+  incpos := by decide
+  hle := P.hleL
+  hdvd := Int.one_dvd _
+  hsafe := by
+    apply Int.add_one_le_of_lt
+    apply lt_trans (Int32.lt_iff_toInt_lt.mp P.hLlt)
+    decide
+
+@[simp] theorem sieve_iter_start {P : SieveParams} :
+  (SieveIterParams P).start = 2 := rfl
+
+@[simp] theorem sieve_iter_finish {P : SieveParams} :
+  (SieveIterParams P).finish = P.L := rfl
+
+@[simp] theorem sieve_iter_inc {P : SieveParams} :
+  (SieveIterParams P).inc = 1 := rfl
+
+structure Sieve (P : SieveParams) where
   -- The sieve - with non-zero values indicating divisors
   divs : Array Int32
   -- The list of primes found thus far
   primes : Array Int32
-  -- Current search location
-  i : Int32
+  -- An iterator, to allow the use of 'LoopIterator'
+  iter : IteratorInt32 (SieveIterParams P)
   -- The size of 'divs' is given by 'L'
-  hsize : divs.size = L.toInt
-  -- The length of the sieve has an upper bound
-  -- This is required to avoid exceeding Int32.maxValue
-  hLlt : L < 2^30
+  hsize : divs.size = P.L.toInt
   -- The entries in the sieve are non-negative
   hdivsnn : ∀ x ∈ divs, 0 ≤ x
-  -- 'i' is greater than 1
-  hlti : 1 < i.toInt
-  -- 'i' is less than or equal to 'L' - the size of the sieve
-  -- TODO: Do we actually need this?
-  hile : i.toInt ≤ L.toInt
   -- Each entry in the sieve is marked if-and-only-if its index
   -- is divisible by some prime in 'primes'
   hmarked : ∀ j, (0 < j) → (jlt : j < divs.size) →
@@ -51,46 +75,48 @@ structure Sieve (L : Int32) where
   -- it is a prime less than 'i'
   hpmem_iff : ∀ p : ℕ,
     ((p : ℤ) ∈ (Array.map Int32.toInt primes) ↔
-     (p : ℤ) < i.toInt ∧ Nat.Prime p)
+     (p : ℤ) < iter.val.toInt ∧ Nat.Prime p)
   -- If an entry in the sieve is non-zero, its value corresponds to the smallest
   -- divisor of its index greater than 1
   hdivs_dvd : ∀ j, (jlt : j < divs.size) → divs[j]'(jlt) ≠ 0 →
     (divs[j]'(jlt)).toInt ∣ j ∧
     ∀ y, 1 < y → y ∣ j → (divs[j]'(jlt)).toInt ≤ (y : ℤ)
   -- The number of elements in 'primes' is less than 'i'
-  hprimessize : primes.size < i.toInt
+  hprimessize : primes.size < iter.val.toInt
   -- The elements in 'primes' are strictly increasing
   hprimesinc : ∀ m n, (mlt : m < n) → (nlt : n < primes.size) →
     primes[m]'(lt_trans mlt nlt) < primes[n]
 
-theorem sieve_index_toInt_pos {L : Int32} (S : Sieve L) : 0 < S.i.toInt := lt_trans (by simp) S.hlti
+theorem sieve_index_toInt_pos {P : SieveParams} (S : Sieve P) : 0 < S.iter.val.toInt :=
+  lt_of_lt_of_le (by simp) (Int32.le_iff_toInt_le.mp S.iter.hleval)
 
-theorem sieve_index_pos {L : Int32} (S : Sieve L) : 0 < S.i :=
+theorem sieve_index_pos {P : SieveParams} (S : Sieve P) : 0 < S.iter.val :=
   Int32.lt_iff_toInt_lt.mpr (sieve_index_toInt_pos S)
 
-theorem sieve_length_pos {L : Int32} (S : Sieve L) : 0 < S.divs.size := by
+theorem sieve_length_pos {P : SieveParams} (S : Sieve P) : 0 < S.divs.size := by
   apply Int.lt_of_ofNat_lt_ofNat
   rw [S.hsize]
-  exact lt_of_lt_of_le (sieve_index_toInt_pos S) S.hile
+  apply lt_of_lt_of_le (sieve_index_toInt_pos S)
+  exact Int32.le_iff_toInt_le.mp S.iter.hvalle
 
 -- Show equivalence for the two ways of expressing the upper bound on an index into S.divs
 theorem lt_sieve_length_iff_of_nonneg
-  {L : Int32} (S : Sieve L) (n : Int32) (hnnn : 0 ≤ n) :
-  n.toInt.natAbs < S.divs.size ↔ n.toInt < L.toInt := by
+  {P : SieveParams} (S : Sieve P) (n : Int32) (hnnn : 0 ≤ n) :
+  n.toInt.natAbs < S.divs.size ↔ n.toInt < P.L.toInt := by
   rw [← Int.ofNat_lt]
   rw [Int.ofNat_natAbs_of_nonneg (Int32.le_iff_toInt_le.mp hnnn), S.hsize]
 
 theorem lt_sieve_length_of_lt_index
-  {L : Int32} {S : Sieve L} {j : ℕ} (jlt : (j : ℤ) < S.i.toInt) : j < S.divs.size := by
+  {P : SieveParams} {S : Sieve P} {j : ℕ} (jlt : (j : ℤ) < S.iter.val.toInt) : j < S.divs.size := by
   apply Int.lt_of_ofNat_lt_ofNat
   rw [S.hsize]
-  apply lt_of_lt_of_le jlt S.hile
+  apply lt_of_lt_of_le jlt (Int32.le_iff_toInt_le.mp S.iter.hvalle)
 
 -- If an entry's index is divisible by some natural number less than S.i, the entry is marked
 -- This is a more useable consequence of 'hmarked'
-theorem sieve_marked_of_dvd_of_lt {L : Int32} (S : Sieve L) :
+theorem sieve_marked_of_dvd_of_lt {P : SieveParams} (S : Sieve P) :
   ∀ (m n : ℕ), 0 < n → (nlt : n < S.divs.size) →
-  m ≠ 1 → m ∣ n → m < S.i.toInt → S.divs[n]'nlt ≠ 0 := by
+  m ≠ 1 → m ∣ n → m < S.iter.val.toInt → S.divs[n]'nlt ≠ 0 := by
   intro m n npos nlt mne1 mdvdn mlt
   apply (S.hmarked n npos nlt).mp
   rcases Nat.exists_prime_and_dvd mne1 with ⟨p, pprime, hp⟩
@@ -105,8 +131,8 @@ theorem sieve_marked_of_dvd_of_lt {L : Int32} (S : Sieve L) :
 -- Every entry properly between 1 and 'i' is marked
 -- This is the result of combining 'hmarked' (every entry with a divisor in
 -- 'primes' is marked) and 'hpmem_iff' (every prime less than S.i is in 'primes)
-theorem sieve_marked_of_lt_index {L : Int32} (S : Sieve L) :
-  ∀ (j : ℕ), (ltj : 1 < j) → (jlt : (j : ℤ) < S.i.toInt) →
+theorem sieve_marked_of_lt_index {P : SieveParams} (S : Sieve P) :
+  ∀ (j : ℕ), (ltj : 1 < j) → (jlt : (j : ℤ) < S.iter.val.toInt) →
   S.divs[j]'(lt_sieve_length_of_lt_index jlt) ≠ 0 := by
   intro j ltj jlt
   have jlt' := lt_sieve_length_of_lt_index jlt
@@ -115,7 +141,7 @@ theorem sieve_marked_of_lt_index {L : Int32} (S : Sieve L) :
   have jpos : 0 < j := lt_trans (by simp) ltj
   apply (S.hmarked j jpos jlt').mp
   have ple := Nat.le_of_dvd jpos pdvd
-  have plt : (p : ℤ) < S.i.toInt :=
+  have plt : (p : ℤ) < S.iter.val.toInt :=
     lt_of_le_of_lt (Int.ofNat_le_ofNat_of_le ple) jlt
   -- Get the Int32 that corresponds to 'p' in 'primes' (it must exist by 'hpmem_iff')
   rcases Array.exists_of_mem_map ((S.hpmem_iff p).mpr ⟨plt, pprime⟩) with ⟨p', p'mem, hp'p⟩
@@ -123,23 +149,23 @@ theorem sieve_marked_of_lt_index {L : Int32} (S : Sieve L) :
   use p', p'mem
   rwa [hp'p]
 
+def InitSieveParams : SieveParams where
+  L := SIEVE_SIZE_32
+  hleL := by decide
+  hLlt := by decide
+
+@[simp] theorem init_sieve_params_size : InitSieveParams.L = SIEVE_SIZE_32 := rfl
+
 -- Construct a sieve with all elements set to zero
-def init_sieve : Sieve SIEVE_SIZE_32 where
+def init_sieve : Sieve InitSieveParams where
   divs := Array.replicate SIEVE_SIZE_32.toInt.toNat 0
   primes := #[]
-  i := 2
+  iter := iterator_int32_begin _
   hsize := by
     rw [Array.size_replicate]; decide
-  hLlt := by
-    unfold SIEVE_SIZE_32;
-    rfl
   hdivsnn := by
     intro x xmem
     rw [(Array.mem_replicate.mp xmem).2]; rfl
-  hlti := by simp
-  hile := by
-    unfold SIEVE_SIZE_32
-    simp
   hmarked := by simp
   hprimesnn := fun p pmem ↦ False.elim (Array.not_mem_empty _ pmem)
   hpmem_iff := by
@@ -175,11 +201,12 @@ structure MMSArgs (L : Int32) where
   hile : i.toInt ≤ L.toInt
   hLlt : L < 2^30
 
-def mms_args_of_sieve {L : Int32} (S : Sieve L) : MMSArgs L where
-  i := S.i
-  hlti := S.hlti
-  hile := S.hile
-  hLlt := S.hLlt
+def mms_args_of_sieve {P : SieveParams} (S : Sieve P) : MMSArgs P.L where
+  i := S.iter.val
+  hlti :=
+    Int.lt_of_lt_of_le (by simp) (Int32.le_iff_toInt_le.mp S.iter.hleval)
+  hile := Int32.le_iff_toInt_le.mp S.iter.hvalle
+  hLlt := P.hLlt
 
 def mark_multiples_state_of_sieve {L : Int32} (A : Array Int32)
   (hsize : A.size = L.toInt) (args : MMSArgs L)  : MarkMultiplesState where
@@ -195,19 +222,19 @@ def mark_multiples_state_of_sieve {L : Int32} (A : Array Int32)
     rw [hsize]
     exact (Int32.lt_iff_toInt_lt.mp args.hLlt)
 
-@[simp] theorem mark_multiples_state_of_sieve_size {L : Int32} (S : Sieve L) :
+@[simp] theorem mark_multiples_state_of_sieve_size {P : SieveParams} (S : Sieve P) :
   (mark_multiples_state_of_sieve
     S.divs S.hsize (mms_args_of_sieve S)).A.size = S.divs.size := rfl
 
-@[simp] theorem mark_multiples_state_of_sieve_inc {L : Int32} (S : Sieve L) :
+@[simp] theorem mark_multiples_state_of_sieve_inc {P : SieveParams} (S : Sieve P) :
   (mark_multiples_state_of_sieve
-    S.divs S.hsize (mms_args_of_sieve S)).inc = S.i := rfl
+    S.divs S.hsize (mms_args_of_sieve S)).inc = S.iter.val := rfl
 
-@[simp] theorem mark_multiples_state_of_sieve_cur {L : Int32} (S : Sieve L) :
+@[simp] theorem mark_multiples_state_of_sieve_cur {P : SieveParams} (S : Sieve P) :
   (mark_multiples_state_of_sieve
-    S.divs S.hsize (mms_args_of_sieve S)).cur = S.i := rfl
+    S.divs S.hsize (mms_args_of_sieve S)).cur = S.iter.val := rfl
 
-@[simp] theorem mark_multiples_state_of_sieve_array {L : Int32} (S : Sieve L) :
+@[simp] theorem mark_multiples_state_of_sieve_array {P : SieveParams} (S : Sieve P) :
   (mark_multiples_state_of_sieve
     S.divs S.hsize (mms_args_of_sieve S)).A = S.divs := rfl
 
@@ -428,7 +455,7 @@ def mark_multiples {L : Int32} (A : Array Int32)
   do_loop (mark_multiples_state_of_sieve A hsize args)
 
 -- The size of the marked array is the same as the size of the sieve
-@[simp] theorem mark_multiples_size {L : Int32} (S : Sieve L) :
+@[simp] theorem mark_multiples_size {P : SieveParams} (S : Sieve P) :
   (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).A.size = S.divs.size := by
   unfold mark_multiples
   rw [← mark_multiples_state_of_sieve_size S]
@@ -437,8 +464,8 @@ def mark_multiples {L : Int32} (A : Array Int32)
   apply mark_multiples_advance_size mms
 
 -- The increment of the marked array is the same as S.i
-@[simp] theorem mark_multiples_inc {L : Int32} (S : Sieve L) :
-  (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).inc = S.i :=
+@[simp] theorem mark_multiples_inc {P : SieveParams} (S : Sieve P) :
+  (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).inc = S.iter.val :=
   @loop_incI32_inc_const MarkMultiplesState _ _
 
 -- Prove the equivalence between cur < finish in the SimpleLoopState interface
@@ -449,7 +476,7 @@ lemma mark_multiples_cur_lt_size_iff_cur_lt_finish (MMS : MarkMultiplesState) :
 
 -- 'mark_multiples' has no effect on entries in the sieve
 -- that were previous marked
-theorem mark_multiples_unchanged_of_marked {L : Int32} (S : Sieve L) :
+theorem mark_multiples_unchanged_of_marked {P : SieveParams} (S : Sieve P) :
   ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < S.divs.size) → S.divs[j] ≠ 0 →
   (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).A[j]'(by
     rwa [mark_multiples_size]) = S.divs[j] := by
@@ -476,8 +503,8 @@ theorem mark_multiples_unchanged_of_marked {L : Int32} (S : Sieve L) :
 
 -- 'mark_multiples' has no effect on entries in the sieve
 -- whose indices are not divisible by 'inc'
-theorem mark_multiples_unchanged_of_not_dvd {L : Int32} (S : Sieve L) :
-  ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < S.divs.size) → ¬S.i.toInt ∣ (j : ℤ) →
+theorem mark_multiples_unchanged_of_not_dvd {P : SieveParams} (S : Sieve P) :
+  ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < S.divs.size) → ¬S.iter.val.toInt ∣ (j : ℤ) →
   (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).A[j]'(by
     rwa [mark_multiples_size]) = S.divs[j] := by
   intro j jpos jlt hdvd
@@ -501,7 +528,7 @@ theorem mark_multiples_unchanged_of_not_dvd {L : Int32} (S : Sieve L) :
   exact (loop_prop_const mms₀ prop base step _).2
 
 -- 'mark_multiples' has no effect on the first entry in the sieve
-theorem mark_multiples_unchanged_of_first {L : Int32} (S : Sieve L) :
+theorem mark_multiples_unchanged_of_first {P : SieveParams} (S : Sieve P) :
   (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).A[0]'(
     (mark_multiples_size S) ▸ (sieve_length_pos S)
   ) = S.divs[0]'(sieve_length_pos S) := by
@@ -522,16 +549,16 @@ theorem mark_multiples_unchanged_of_first {L : Int32} (S : Sieve L) :
 
 -- Any entry that was zero and has index divisible by 'inc' will be
 -- set to 'inc' by mark_multiples
-theorem mark_multiples_changed {L : Int32} (S : Sieve L) :
+theorem mark_multiples_changed {P : SieveParams} (S : Sieve P) :
   ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < S.divs.size) →
-  S.divs[j] = 0 → S.i.toInt ∣ (j : ℤ) →
+  S.divs[j] = 0 → S.iter.val.toInt ∣ (j : ℤ) →
   (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).A[j]'(by
-    rwa [mark_multiples_size]) = S.i := by
+    rwa [mark_multiples_size]) = S.iter.val := by
   intro j jpos _ hz hdvd
   let mms₀ := mark_multiples_state_of_sieve
     S.divs S.hsize (mms_args_of_sieve S)
   let prop (mms : MarkMultiplesState) : Prop :=
-    (_ : j < mms.A.size) → mms.inc.toInt = S.i.toInt →
+    (_ : j < mms.A.size) → mms.inc.toInt = S.iter.val.toInt →
     (mms.cur.toInt ≤ j → mms.A[j] = 0) ∧
     (j < mms.cur.toInt → mms.A[j] = mms.inc)
   have base : prop mms₀ := by
@@ -589,8 +616,8 @@ theorem mark_multiples_changed {L : Int32} (S : Sieve L) :
 
 -- Any entry whose index is divisible by 'inc' will be marked
 -- after calling mark_multiples
-theorem mark_multiples_marked_of_dvd {L : Int32} (S : Sieve L) :
-  ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < S.divs.size) → S.i.toInt ∣ (j : ℤ) →
+theorem mark_multiples_marked_of_dvd {P : SieveParams} (S : Sieve P) :
+  ∀ (j : ℕ), (jpos : 0 < j) → (jlt : j < S.divs.size) → S.iter.val.toInt ∣ (j : ℤ) →
   (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).A[j]'(by
     rwa [mark_multiples_size]) ≠ 0 := by
   intro j jpos jlt idvd
@@ -600,28 +627,41 @@ theorem mark_multiples_marked_of_dvd {L : Int32} (S : Sieve L) :
   push_neg at h
   rwa [mark_multiples_unchanged_of_marked S j jpos jlt h]
 
-lemma sieve_toInt_index_succ {L : Int32} (S : Sieve L) :
-  (S.i + 1).toInt = S.i.toInt + 1 := by
+lemma sieve_toInt_index_succ {P : SieveParams} (S : Sieve P) :
+  (S.iter.val + 1).toInt = S.iter.val.toInt + 1 := by
   apply int32_toInt_add_of_bounds
   constructor
   · apply le_of_lt
     apply Int.lt_add_of_sub_right_lt
     exact lt_trans (by simp) (sieve_index_toInt_pos S)
   · apply Int.add_lt_of_lt_sub_right
-    apply lt_trans (lt_of_le_of_lt S.hile (Int32.lt_iff_toInt_lt.mp S.hLlt))
+    apply lt_of_le_of_lt (Int32.le_iff_toInt_le.mp S.iter.hvalle)
+    apply lt_trans (Int32.lt_iff_toInt_lt.mp P.hLlt)
     decide
 
+lemma sieve_iter_val_nonneg {P : SieveParams} (S : Sieve P) : 0 ≤ S.iter.val := by
+  apply Int32.le_trans _ S.iter.hleval; simp
+
+-- This allows access to elements of the sieve given that iter ≠ end
+lemma sieve_iter_val_lt {P : SieveParams} (S : Sieve P)
+  (h : ¬S.iter = iterator_int32_end _) :
+  S.iter.val.toInt.natAbs < S.divs.size := by
+  rw [lt_sieve_length_iff_of_nonneg S _ (sieve_iter_val_nonneg S)]
+  apply lt_of_le_of_ne (Int32.le_iff_toInt_le.mp S.iter.hvalle)
+  contrapose! h
+  rw [← iterator_int32_val_eq_finish_iff]
+  exact Int32.toInt_inj.mp h
+
 -- Advance the loop which fills out the sieve, in the case where S.divs[i] = 0
-def advance_sieve_of_entry_eq_zero {L : Int32} (S : Sieve L)
-  (ilt : S.i.toInt.natAbs < S.divs.size)
-  (hiz : S.divs[S.i.toInt.natAbs]'ilt = 0) : Sieve L where
+def advance_sieve_of_entry_eq_zero {P : SieveParams} (S : Sieve P)
+  (hnend : ¬S.iter = iterator_int32_end _)
+  (hiz : S.divs[S.iter.val.toInt.natAbs]'(sieve_iter_val_lt S hnend) = 0) : Sieve P where
   divs := (mark_multiples S.divs S.hsize (mms_args_of_sieve S)).A
-  primes := S.primes.push S.i
-  i := S.i + 1
+  primes := S.primes.push S.iter.val
+  iter := iterator_int32_next S.iter
   hsize := by
     rw [mark_multiples_size]
     exact S.hsize
-  hLlt := S.hLlt
   hdivsnn := by
     intro x xmem
     rcases Array.getElem_of_mem xmem with ⟨j, jlt, hjx⟩
@@ -638,22 +678,13 @@ def advance_sieve_of_entry_eq_zero {L : Int32} (S : Sieve L)
     by_cases hmarked : S.divs[j]'jlt' ≠ 0
     · rw [mark_multiples_unchanged_of_marked] <;> try assumption
     rename' hmarked => hnmarked; push_neg at hnmarked
-    by_cases hndvd : ¬S.i.toInt ∣ j
+    by_cases hndvd : ¬S.iter.val.toInt ∣ j
     · rw [mark_multiples_unchanged_of_not_dvd] <;> try assumption
     rename' hndvd => hdvd; push_neg at hdvd
-    have hSinn : 0 ≤ S.i := by
+    have hSinn : 0 ≤ S.iter.val := by
       apply Int32.le_iff_toInt_le.mpr
       exact le_of_lt (sieve_index_toInt_pos S)
     rw [mark_multiples_changed] <;> assumption
-  hlti := by
-    rw [sieve_toInt_index_succ]
-    exact Int.add_lt_add S.hlti one_pos
-  hile := by
-    rw [sieve_toInt_index_succ]
-    apply Int.add_one_le_of_lt
-    rw [← S.hsize]
-    convert Int.ofNat_lt_ofNat_of_lt ilt; symm; simp
-    exact le_of_lt (sieve_index_toInt_pos S)
   hmarked := by
     intro j jpos jlt
     simp at jlt
@@ -671,10 +702,10 @@ def advance_sieve_of_entry_eq_zero {L : Int32} (S : Sieve L)
       · rcases (S.hmarked j jpos jlt).mpr h' with ⟨p, pmem, hp⟩; use p
         exact ⟨Array.mem_push_of_mem _ pmem, hp⟩
       push_neg at h'
-      have hdvd : S.i.toInt ∣ (j : ℤ) := by
+      have hdvd : S.iter.val.toInt ∣ (j : ℤ) := by
         contrapose! h
         rwa [mark_multiples_unchanged_of_not_dvd] <;> assumption
-      exact ⟨S.i, Array.mem_push_self, hdvd⟩
+      exact ⟨S.iter.val, Array.mem_push_self, hdvd⟩
   hprimesnn := by
     intro p pmem
     rcases Array.mem_or_eq_of_mem_push pmem with lhs | rfl
@@ -682,7 +713,7 @@ def advance_sieve_of_entry_eq_zero {L : Int32} (S : Sieve L)
     · exact Int32.le_of_lt (sieve_index_pos S)
   hpmem_iff := by
     intro p
-    rw [sieve_toInt_index_succ]
+    rw [iterator_int32_next_val_toInt _ hnend]
     constructor
     · intro pmem
       rcases Array.exists_of_mem_map pmem with ⟨p', p'mem, hp'⟩
@@ -695,7 +726,7 @@ def advance_sieve_of_entry_eq_zero {L : Int32} (S : Sieve L)
         apply Nat.prime_def.mpr
         have pge2 : 2 ≤ p := by
           apply Int.le_of_ofNat_le_ofNat
-          exact (hp' ▸ (Int.add_one_le_of_lt S.hlti))
+          exact hp' ▸ (Int32.le_iff_toInt_le.mp S.iter.hleval)
         use pge2
         intro m mdvdp
         have ppos : 0 < p := lt_of_lt_of_le two_pos pge2
@@ -716,7 +747,7 @@ def advance_sieve_of_entry_eq_zero {L : Int32} (S : Sieve L)
         exact Int.ofNat_lt_ofNat_of_lt mlt
     · intro ⟨ple, pprime⟩
       apply Int.le_of_lt_add_one at ple
-      by_cases hpi : (p : ℤ) = S.i.toInt
+      by_cases hpi : (p : ℤ) = S.iter.val.toInt
       · rw [hpi]
         exact Array.mem_map_of_mem Array.mem_push_self
       rename' hpi => pnei; push_neg at pnei
@@ -740,7 +771,7 @@ def advance_sieve_of_entry_eq_zero {L : Int32} (S : Sieve L)
     · rw [mark_multiples_unchanged_of_marked] <;> try assumption
       exact S.hdivs_dvd j jlt hmarked
     push_neg at hmarked
-    by_cases hdvd : ¬S.i.toInt ∣ j
+    by_cases hdvd : ¬S.iter.val.toInt ∣ j
     · rw [mark_multiples_unchanged_of_not_dvd] at * <;> try assumption
       exact S.hdivs_dvd j jlt hAjz
     push_neg at hdvd
@@ -754,7 +785,8 @@ def advance_sieve_of_entry_eq_zero {L : Int32} (S : Sieve L)
     apply sieve_marked_of_dvd_of_lt S y j <;> try assumption
     exact (ne_of_lt lty).symm
   hprimessize := by
-    rw [sieve_toInt_index_succ, Array.size_push]
+    rw [iterator_int32_next_val_toInt _ hnend]
+    rw [sieve_iter_inc, Array.size_push]
     rw [← Int.ofNat_add_ofNat]
     exact Int.add_lt_add_right S.hprimessize 1
   hprimesinc := by
@@ -778,29 +810,20 @@ def advance_sieve_of_entry_eq_zero {L : Int32} (S : Sieve L)
     apply Array.mem_map_of_mem; simp
 
 -- Advance the loop which fills out the sieve, in the case where S.divs[i] ≠ 0
-def advance_sieve_of_entry_ne_zero {L : Int32} (S : Sieve L)
-  (ilt : S.i.toInt.natAbs < S.divs.size)
-  (hinz : S.divs[S.i.toInt.natAbs]'ilt ≠ 0) : Sieve L where
+def advance_sieve_of_entry_ne_zero {P : SieveParams} (S : Sieve P)
+  (hnend : ¬S.iter = iterator_int32_end _)
+  (hinz : S.divs[S.iter.val.toInt.natAbs]'(sieve_iter_val_lt S hnend) ≠ 0) : Sieve P where
   divs := S.divs
   primes := S.primes
-  i := S.i + 1
+  iter := iterator_int32_next S.iter
   hsize := S.hsize
-  hLlt := S.hLlt
   hdivsnn := S.hdivsnn
-  hlti := by
-    rw [sieve_toInt_index_succ]
-    exact Int.add_lt_add S.hlti one_pos
-  hile := by
-    rw [sieve_toInt_index_succ]
-    apply Int.add_one_le_of_lt
-    convert Int.ofNat_lt_ofNat_of_lt ilt
-    · exact (Int.ofNat_natAbs_of_nonneg (le_of_lt (sieve_index_toInt_pos S))).symm
-    · exact S.hsize.symm
   hmarked := S.hmarked
   hprimesnn := S.hprimesnn
   hpmem_iff := by
     intro p
-    rw [sieve_toInt_index_succ]
+    rw [iterator_int32_next_val_toInt _ hnend]
+    rw [sieve_iter_inc]
     constructor
     · intro h
       obtain ⟨plt, pprime⟩ := (S.hpmem_iff p).mp h
@@ -815,12 +838,14 @@ def advance_sieve_of_entry_ne_zero {L : Int32} (S : Sieve L)
         rw [hpi]
         exact sieve_index_toInt_pos S
       -- Since entry 'i' is marked, 'i' is divisible by some element of primes, p'
-      rcases (S.hmarked S.i.toInt.natAbs (by rwa [← hpi]) ilt).mpr hinz with ⟨p', p'mem, p'dvd⟩
+      have hmark := S.hmarked S.iter.val.toInt.natAbs
+        (by rwa [← hpi]) (sieve_iter_val_lt S hnend)
+      rcases hmark.mpr hinz with ⟨p', p'mem, p'dvd⟩
       rw [← hpi] at p'dvd; simp at p'dvd
       have p'nn : 0 ≤ p'.toInt :=
         Int32.le_iff_toInt_le.mp (S.hprimesnn p' p'mem)
       have hp'abs := Int.ofNat_natAbs_of_nonneg p'nn
-      have : p'.toInt < S.i.toInt ∧ Nat.Prime p'.toInt.natAbs := by
+      have : p'.toInt < S.iter.val.toInt ∧ Nat.Prime p'.toInt.natAbs := by
         rw [← hp'abs]
         apply ((S.hpmem_iff p'.toInt.natAbs).mp _)
         rw [hp'abs]
@@ -841,123 +866,73 @@ def advance_sieve_of_entry_ne_zero {L : Int32} (S : Sieve L)
       exact ne_of_lt p'lt
   hdivs_dvd := S.hdivs_dvd
   hprimessize := by
-    rw [sieve_toInt_index_succ]
+    rw [iterator_int32_next_val_toInt _ hnend]
+    rw [sieve_iter_inc]
     apply lt_trans _ (Int.add_lt_add_right S.hprimessize 1)
     simp
   hprimesinc := S.hprimesinc
 
 -- Combine the two cases into a single advancement function
-def advance_sieve {L : Int32} (S : Sieve L)
-  (ilt : S.i.toInt.natAbs < S.divs.size) : Sieve L :=
-  if hz : S.divs[S.i.toInt.natAbs]'ilt = 0
-  then advance_sieve_of_entry_eq_zero S ilt hz
-  else advance_sieve_of_entry_ne_zero S ilt hz
+def advance_sieve {P : SieveParams} (S : Sieve P)
+  (hnend : ¬S.iter = iterator_int32_end _) : Sieve P :=
+  if hz : S.divs[S.iter.val.toInt.natAbs]'(sieve_iter_val_lt S hnend) = 0
+  then advance_sieve_of_entry_eq_zero S hnend hz
+  else advance_sieve_of_entry_ne_zero S hnend hz
 
-@[simp] theorem advance_sieve_size {L : Int32} (S : Sieve L)
-  (ilt : S.i.toInt.natAbs < S.divs.size) :
-  (advance_sieve S ilt).divs.size = S.divs.size := by
+@[simp] theorem advance_sieve_size {P : SieveParams} (S : Sieve P)
+  (hnend : ¬S.iter = iterator_int32_end _) :
+  (advance_sieve S hnend).divs.size = S.divs.size := by
   apply Int.ofNat_inj.mp
   repeat rw [Sieve.hsize]
 
-@[simp] theorem advance_sieve_index {L : Int32} (S : Sieve L)
-  (ilt : S.i.toInt.natAbs < S.divs.size) :
-  (advance_sieve S ilt).i = S.i + 1 := by
+@[simp] theorem advance_sieve_index {P : SieveParams} (S : Sieve P)
+  (hnend : ¬S.iter = iterator_int32_end _) :
+  (advance_sieve S hnend).iter.val = S.iter.val + 1 := by
   unfold advance_sieve
-  split_ifs <;> rfl
+  unfold advance_sieve_of_entry_eq_zero
+  unfold advance_sieve_of_entry_ne_zero
+  split_ifs with h
+  repeat {
+    rw [iterator_int32_next_val _ hnend]
+    rw [sieve_iter_inc]
+  }
 
 -- Adapt 'int32_lt_ofNat_iff_toInt_natAbs_lt' for Sieve
-lemma sieve_index_lt_size_iff {L : Int32} (S : Sieve L) :
-  S.i < Int32.ofNat S.divs.size ↔ S.i.toInt.natAbs < S.divs.size :=
+lemma sieve_index_lt_size_iff {P : SieveParams} (S : Sieve P) :
+  S.iter.val < Int32.ofNat S.divs.size ↔ S.iter.val.toInt.natAbs < S.divs.size :=
   int32_lt_ofNat_iff_toInt_natAbs_lt
-    (by linarith [S.hlti])
+    (Int32.le_iff_toInt_le.mp (sieve_iter_val_nonneg S))
     (by
       apply Int.lt_of_ofNat_lt_ofNat
       rw [S.hsize]
-      exact lt_trans (Int32.lt_iff_toInt_lt.mp S.hLlt) (by decide)
+      exact lt_trans (Int32.lt_iff_toInt_lt.mp P.hLlt) (by decide)
     )
 
--- Prove that 'Sieve' implements a simple loop
-instance (L : Int32) : LoopIncI32 (Sieve L) where
-  cur := Sieve.i
-  inc := fun _ ↦ 1
-  finish := fun S ↦ Int32.ofNat S.divs.size
-  adv := fun S ilt ↦ advance_sieve S (by
-    simp only [decide_eq_true_eq, Int32.not_le] at ilt
-    rwa [← sieve_index_lt_size_iff]
-  )
-  hpos := fun _ ↦ by simp
-  hsafe := by
-    intro S
-    unfold Int32.maxValue
-    have h : S.divs.size < 2 ^ 31 := by
-      apply Int.lt_of_ofNat_lt_ofNat
-      rw [S.hsize]
-      exact lt_trans (Int32.lt_iff_toInt_lt.mp S.hLlt) (by decide)
-    rw [Int32.toInt_ofNat_of_lt h, S.hsize]
-    simp only [Int32.reduceToInt]
-    apply Int.add_one_le_of_lt
-    exact lt_trans (Int32.lt_iff_toInt_lt.mp S.hLlt) (by decide)
-  hadv := fun S ilt ↦ advance_sieve_index _ _
-  hinc := fun _ _ ↦ rfl
-  hfinish := by simp
+-- Prove that 'Sieve' implements an iterator loop
+instance {P : SieveParams} :
+  LoopIterator (Sieve P) (IteratorInt32 (SieveIterParams P)) where
+  iter := fun S ↦ S.iter
+  adv := advance_sieve
+  hadv := by
+    intro S hnend
+    unfold advance_sieve
+    split_ifs <;> rfl
 
-@[simp] theorem sieve_loop_cur {L : Int32} (S : Sieve L) :
-  LoopIncI32.cur S = S.i := rfl
+@[simp] theorem sieve_term {P : SieveParams} (S : Sieve P) :
+  LoopBase.term S = decide (S.iter = iterator_int32_end _) := rfl
 
-@[simp] theorem sieve_loop_inc {L : Int32} (S : Sieve L) :
-  LoopIncI32.inc S = 1 := rfl
-
-@[simp] theorem sieve_loop_finish {L : Int32} (S : Sieve L) :
-  LoopIncI32.finish S = Int32.ofNat S.divs.size := rfl
-
-@[simp] theorem sieve_loop_adv {L : Int32} (S : Sieve L) :
-  LoopIncI32.adv S = fun hlt ↦
-    advance_sieve S (by
-      simp only [decide_eq_true_eq, Int32.not_le] at hlt
-      rwa [← sieve_index_lt_size_iff S]
-    ) := rfl
-
-def sieve_of_eratosthenes : Sieve SIEVE_SIZE_32 :=
+def sieve_of_eratosthenes : Sieve InitSieveParams :=
   do_loop init_sieve
 
 def primes : Array Int32 := sieve_of_eratosthenes.primes
 def divs : Array Int32 := sieve_of_eratosthenes.divs
 
--- Prove that the value of Sieve.i is at least SIEVE_SIZE
--- after loop execution is complete
-theorem sieve_of_eratosthenes_index_ge :
-  SIEVE_SIZE ≤ sieve_of_eratosthenes.i.toInt := by
-  rw [← sieve_size_32_toInt]
-  have : Int32.ofNat init_sieve.divs.size ≤ (do_loop init_sieve).i :=
-    loop_forward_bound_le _ _ init_sieve
-  apply Int32.le_iff_toInt_le.mp at this
-  rwa [Int32.toInt_ofNat_of_lt, Sieve.hsize] at this
-  apply Int.lt_of_ofNat_lt_ofNat
-  rw [Sieve.hsize]; decide
-
 theorem sieve_of_eratosthenes_index :
-  sieve_of_eratosthenes.i = SIEVE_SIZE_32 := by
-  have curlt : LoopIncI32.cur init_sieve < LoopIncI32.finish init_sieve := by
-    unfold init_sieve;
-    simp only [sieve_loop_cur, sieve_loop_finish]
-    rw [Array.size_replicate]; decide
-  have ile : SIEVE_SIZE_32 ≤ sieve_of_eratosthenes.i := by
-    apply Int32.le_iff_toInt_le.mpr
-    rw [sieve_size_32_toInt]
-    exact sieve_of_eratosthenes_index_ge
-  apply Int32.le_antisymm _ ile
-  apply Int32.le_iff_toInt_le.mpr
-  have curlt' : (do_loop init_sieve).i < Int32.ofNat init_sieve.divs.size + 1 :=
-    loop_incI32_term_param_lt_of_lt init_sieve curlt
-  apply Int32.lt_iff_toInt_lt.mp at curlt'
-  have hrw :
-    (Int32.ofNat init_sieve.divs.size + 1).toInt =
-    (Int32.ofNat init_sieve.divs.size).toInt + 1 :=
-    loop_incI32_toInt_finish_add_inc init_sieve
-  rw [hrw] at curlt'
-  apply le_trans (Int.le_of_lt_add_one curlt')
-  rw [Int32.toInt_ofNat_of_lt, Sieve.hsize]
-  rw [init_sieve_size]; decide
+  sieve_of_eratosthenes.iter.val = SIEVE_SIZE_32 := by
+  unfold sieve_of_eratosthenes
+  have := loop_term init_sieve
+  rw [sieve_term, decide_eq_true_eq] at this
+  rw [this]; rfl
 
 theorem primes_nonneg : ∀ n ∈ primes, 0 ≤ n :=
   fun n nmem ↦ sieve_of_eratosthenes.hprimesnn n nmem
@@ -992,7 +967,9 @@ theorem lt_of_mem_primes :
   have nnn : 0 ≤ n.toInt := Int32.le_iff_toInt_le.mp (S.hprimesnn n nmem)
   have habs := Int.ofNat_natAbs_of_nonneg nnn
   rw [← habs]
-  apply Int.lt_of_lt_of_le _ S.hile
+  rw [← sieve_size_32_toInt, ← init_sieve_params_size]
+  rw [← sieve_iter_finish]
+  apply Int.lt_of_lt_of_le _ (Int32.le_iff_toInt_le.mp sieve_of_eratosthenes.iter.hvalle)
   apply ((S.hpmem_iff n.toInt.natAbs).mp _).1
   rw [habs]
   exact Array.mem_map_of_mem nmem
@@ -1002,8 +979,14 @@ theorem mem_primes_of_prime_of_lt (p : ℕ) (hprime : Nat.Prime p) (plt : p < SI
   ∃ n ∈ primes, n.toInt = p := by
   let S := sieve_of_eratosthenes
   apply Int.ofNat_lt_ofNat_of_lt at plt
-  replace plt := lt_of_lt_of_le plt sieve_of_eratosthenes_index_ge
+  rw [← sieve_size_32_toInt, ← sieve_of_eratosthenes_index] at plt
   exact Array.exists_of_mem_map ((S.hpmem_iff _).mpr ⟨plt, hprime⟩)
+
+@[simp] theorem divs_size : divs.size = SIEVE_SIZE := by
+  unfold divs
+  apply Int.ofNat_inj.mp
+  rw [sieve_of_eratosthenes.hsize]
+  rw [init_sieve_params_size]; rfl
 
 -- Each entry in 'divs' indicates the smallest divisor of the index of that entry.
 -- Note that entry '1' is undefined. Entry '0' *is* defined but not worth proving.
@@ -1015,18 +998,12 @@ theorem divs_getElem_dvd_and_le :
   let S := sieve_of_eratosthenes
   apply S.hdivs_dvd n nlt
   apply sieve_marked_of_lt_index S n ltn
-  apply lt_of_lt_of_le (Int.ofNat_lt_ofNat_of_lt _) sieve_of_eratosthenes_index_ge
-  apply lt_of_lt_of_le nlt (Int.le_of_ofNat_le_ofNat _)
-  unfold divs
-  rw [← sieve_size_32_toInt, Sieve.hsize]
+  rw [sieve_of_eratosthenes_index]
+  convert Int.ofNat_lt_ofNat_of_lt nlt
+  rw [divs_size]; rfl
 
-@[simp] theorem divs_size : divs.size = SIEVE_SIZE := by
-  unfold divs
-  apply Int.ofNat_inj.mp
-  rw [sieve_of_eratosthenes.hsize, sieve_size_32_toInt]
-
---set_option linter.style.nativeDecide false
---theorem primes_size : primes.size = 78498 := by native_decide
+set_option linter.style.nativeDecide false
+theorem primes_size : primes.size = 78498 := by native_decide
 
 -- In particular, 2 ∈ primes
 theorem primes_two_mem : 2 ∈ primes := by
