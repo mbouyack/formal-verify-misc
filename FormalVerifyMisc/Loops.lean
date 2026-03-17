@@ -115,6 +115,18 @@ instance (α β : Type) [DecidableEq β] [Iterator β] [LoopIterator α β] : Lo
       rw [Function.iterate_succ_apply', hn, Iterator.hend]
     · rwa [Function.iterate_zero, id]
 
+@[simp] theorem loop_base_term_of_loop_iterator
+  (α β : Type) [DecidableEq β] [Iterator β] [LoopIterator α β] (s : α) :
+  LoopBase.term s = decide (LoopIterator.iter s = Iterator.End) := rfl
+
+@[simp] theorem loop_base_adv_of_loop_iterator
+  (α β : Type) [DecidableEq β] [Iterator β] [LoopIterator α β]
+  (s : α) (hterm : ¬LoopBase.term s) :
+  LoopBase.adv s hterm = LoopIterator.adv s (by
+    simp only [loop_base_term_of_loop_iterator, decide_eq_true_eq] at hterm
+    assumption
+  ) := rfl
+
 -- Mapping used to embed Int32 into the natural numbers
 def int32_embed_toFun (i : Int32) := (i.toInt + 2^31).natAbs
 

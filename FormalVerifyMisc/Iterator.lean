@@ -97,7 +97,6 @@ structure IteratorInt32Params where
   incpos : 0 < inc
   hle : start ≤ finish
   hdvd : inc.toInt ∣ (finish.toInt - start.toInt)
-  hsafe : finish.toInt + inc.toInt ≤ Int32.maxValue.toInt
 
 -- Construct an iterator type from Int32
 -- TODO: Generalize this for any native integer type
@@ -137,9 +136,30 @@ def iterator_int32_end (P : IteratorInt32Params) : IteratorInt32 P where
 @[simp] theorem iterator_int32_end_val {P : IteratorInt32Params} :
   (iterator_int32_end P).val = P.finish := rfl
 
+-- If the iterator has not reach "finish", we can safely add 'inc' to its value
+lemma iterator_int32_val_add_inc_le_finish {P : IteratorInt32Params}
+  {iter : IteratorInt32 P} (hnef : iter.val ≠ P.finish) :
+  iter.val.toInt + P.inc.toInt ≤ P.finish.toInt := by
+  have incnn := le_of_lt (Int32.lt_iff_toInt_lt.mp P.incpos)
+  have hvalle := Int32.le_iff_toInt_le.mp iter.hvalle
+  -- Subtract 'start' from both sides of the equation and
+  -- rewrite everything as a multiple of 'inc'
+  apply @Int.le_of_sub_le_sub_right _ _ P.start.toInt
+  rw [add_sub_right_comm]
+  rcases iter.hdvd with ⟨k₀, hk₀⟩
+  rcases P.hdvd with ⟨k₁, hk₁⟩
+  rw [hk₀, hk₁, ← mul_add_one]
+  apply Int.mul_le_mul_of_nonneg_left _ incnn
+  apply Int.add_one_le_of_lt
+  apply Int.lt_of_mul_lt_mul_left _ incnn
+  rw [← hk₀, ← hk₁]
+  apply Int.sub_lt_sub_right (lt_of_le_of_ne hvalle _)
+  exact fun h' ↦ hnef (Int32.toInt_inj.mp h')
+
 -- Prove that the value increment can be move across the 'toInt' conversion
-lemma iterator_int32_toInt_val_inc {P : IteratorInt32Params}
-  (iter : IteratorInt32 P) :
+-- (as long as its value has not yet reached "finish")
+theorem iterator_int32_toInt_val_inc {P : IteratorInt32Params}
+  (iter : IteratorInt32 P) (hnef : iter.val ≠ P.finish) :
   (iter.val + P.inc).toInt = iter.val.toInt + P.inc.toInt := by
   have hleval' := Int32.le_iff_toInt_le.mp iter.hleval
   have hvalle' := Int32.le_iff_toInt_le.mp iter.hvalle
@@ -150,7 +170,8 @@ lemma iterator_int32_toInt_val_inc {P : IteratorInt32Params}
     exact Int.add_le_add (int32_minval_le_toInt iter.val) incnn
   · apply Int.lt_of_le_sub_one
     rw [← Int32.toInt_maxValue]
-    apply le_trans (Int.add_le_add_right hvalle' _) P.hsafe
+    apply le_trans (iterator_int32_val_add_inc_le_finish hnef)
+    exact Int.le_sub_one_of_lt (int32_toInt_lt_maxval _)
 
 -- Define a function for advancing an IteratorInt32
 def iterator_int32_next {P : IteratorInt32Params}
@@ -162,26 +183,16 @@ def iterator_int32_next {P : IteratorInt32Params}
     hleval := by
       have hleval' := Int32.le_iff_toInt_le.mp iter.hleval
       apply Int32.le_iff_toInt_le.mpr
-      rw [iterator_int32_toInt_val_inc]
+      rw [iterator_int32_toInt_val_inc _ h]
       rw [← add_zero P.start.toInt, ← Int32.toInt_zero]
       exact Int.add_le_add hleval' incnn
     hvalle := by
       have hvalle' := Int32.le_iff_toInt_le.mp iter.hvalle
       apply Int32.le_iff_toInt_le.mpr
-      rw [iterator_int32_toInt_val_inc]
-      apply @Int.le_of_sub_le_sub_right _ _ P.start.toInt
-      rw [add_sub_right_comm]
-      rcases iter.hdvd with ⟨k₀, hk₀⟩
-      rcases P.hdvd with ⟨k₁, hk₁⟩
-      rw [hk₀, hk₁, ← mul_add_one]
-      apply Int.mul_le_mul_of_nonneg_left _ incnn
-      apply Int.add_one_le_of_lt
-      apply Int.lt_of_mul_lt_mul_left _ incnn
-      rw [← hk₀, ← hk₁]
-      apply Int.sub_lt_sub_right (lt_of_le_of_ne hvalle' _)
-      exact fun h' ↦ h (Int32.toInt_inj.mp h')
+      rw [iterator_int32_toInt_val_inc _ h]
+      exact iterator_int32_val_add_inc_le_finish h
     hdvd := by
-      rw [iterator_int32_toInt_val_inc, add_sub_right_comm]
+      rw [iterator_int32_toInt_val_inc _ h, add_sub_right_comm]
       apply Int.dvd_add
       · exact iter.hdvd
       · exact dvd_refl _
@@ -201,7 +212,8 @@ theorem iterator_int32_next_val_toInt {P : IteratorInt32Params}
   (hnend : ¬iter = iterator_int32_end _) :
   (iterator_int32_next iter).val.toInt = iter.val.toInt + P.inc.toInt := by
   rw [iterator_int32_next_val iter hnend]
-  rw [iterator_int32_toInt_val_inc]
+  rw [IteratorInt32.ext_iff, iterator_int32_end_val] at hnend
+  rwa [iterator_int32_toInt_val_inc]
 
 -- Equation for the value of an IteratorInt32 after iterating 'n' times
 theorem iterator_int32_iterate_val {P : IteratorInt32Params}
@@ -224,7 +236,7 @@ theorem iterator_int32_iterate_val {P : IteratorInt32Params}
         · exact Int.natCast_nonneg _
         · exact le_of_lt (Int32.lt_iff_toInt_lt.mp P.incpos) }
     · dsimp
-      rw [iterator_int32_toInt_val_inc, add_assoc, add_comm P.inc.toInt]
+      rw [iterator_int32_toInt_val_inc _ h, add_assoc, add_comm P.inc.toInt]
       rw [add_mul, one_mul]
 
 theorem iterator_int32_val_eq_finish_iff
@@ -264,3 +276,9 @@ instance {P : IteratorInt32Params} : Iterator (IteratorInt32 P) where
     rw [Int.mul_ediv_cancel_of_dvd iter.hdvd]
     rw [add_sub_cancel, min_eq_right]
     exact Int32.le_iff_toInt_le.mp iter.hvalle
+
+@[simp] theorem iterator_begin_of_iterator_int32 {P : IteratorInt32Params} :
+  Iterator.Begin = iterator_int32_begin P := rfl
+
+@[simp] theorem iterator_end_of_iterator_int32 {P : IteratorInt32Params} :
+  Iterator.End = iterator_int32_end P := rfl
