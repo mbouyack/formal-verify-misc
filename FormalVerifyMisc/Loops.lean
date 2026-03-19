@@ -18,33 +18,79 @@ termination_by LoopBase.fdec s
 decreasing_by
   exact LoopBase.hdec s h
 
--- Loop which continues until some parameter (of type 'β') falls to some lower bound
+-- If a property of the loop state is constant across calls to 'adv'
+-- it will be constant over the full execution of the loop
+theorem loop_prop_const {α : Type} [LoopBase α] (s : α)
+  (prop : α → Prop) (base : prop s)
+  (step : ∀ t hlt, prop t → prop (LoopBase.adv t hlt)) :
+  prop (do_loop s) := by
+  unfold do_loop
+  split_ifs with h
+  · exact base
+  · apply loop_prop_const _ _ _ step
+    exact step s h base
+termination_by LoopBase.fdec s
+decreasing_by
+  exact LoopBase.hdec s h
+
+-- If a value in the loop state is constant across calls to 'adv'
+-- it will be constant over the full execution of the loop
+theorem loop_val_const {α β : Type} [LoopBase α] (s : α)
+  (f : α → β) (hconst : ∀ t hlt, f (LoopBase.adv t hlt) = f t) :
+  f (do_loop s) = f s := by
+  -- Prove this as a special case of 'loop_prop_const'
+  let prop : α → Prop := fun t ↦ f t = f s
+  have base : prop s := rfl
+  have step : ∀ t hlt, prop t → prop (LoopBase.adv t hlt) := by
+    intro t hlt
+    unfold prop
+    rw [hconst t hlt]
+    exact id
+  exact loop_prop_const s prop base step
+
+-- After loop execution is complete,
+-- the termination requirement has been met
+theorem loop_term {α : Type} [LoopBase α] (s : α) :
+  LoopBase.term (do_loop s) := by
+  unfold do_loop
+  split_ifs with h
+  · assumption
+  · apply loop_term
+termination_by LoopBase.fdec s
+decreasing_by
+  exact LoopBase.hdec s h
+
+-- Loop which proves termination based on some parameter (of type 'β')
+-- which is always decreasing but never falls below some lower bound
 -- 'β' is typically of type Int32, Int64, UInt32, or UInt64
 class LoopReverse (α : Type) (β : outParam Type)
   [LE β] [DecidableRel (· ≤ · : β → β → Prop)] where
-  -- Lower bound for loop execution
-  bound : α → β
-  -- A map from the current loop state to β - used to check for termination
+  -- A function to determine termination
+  term : α → Bool
+  -- A map from the current loop state to β - used to prove termination
   fdec : α → β
   -- Function for advancing the loop state
-  fadv : (s : α) → ¬decide (fdec s ≤ bound s) = true → α
+  fadv : (s : α) → ¬term s → α
   -- Proof that 'fdec' decreases as 'fadv' is called repeatedly
   hdec : ∀ s h, ¬fdec s ≤ fdec (fadv s h)
-  -- Proof that the bound doesn't change as 'fadv' is called
-  hbound : ∀ s h, bound (fadv s h) = bound s
 
--- Loop which continues until some parameter (of type 'β') exceeds some upper bound
+-- Loop which proves termination based on some parameter (of type 'β')
+-- which is always increasing but never exceeds some upper bound
 -- 'β' is typically of type Int32, Int64, UInt32, or UInt64
 class LoopForward (α : Type) (β : outParam Type)
   [LE β] [DecidableRel (· ≤ · : β → β → Prop)] where
-  -- Upper bound for loop execution
+  -- Upper bound used to prove loop termination
   bound : α → β
-  -- A map from the current loop state to β - used to check for termination
+  -- A function to determine termination
+  term : α → Bool
+  -- A map from the current loop state to β
   finc : α → β
   -- Function for advancing the loop state
-  fadv : (s : α) → ¬decide (bound s ≤ finc s) = true → α
+  fadv : (s : α) → ¬term s = true → α
   -- Proof that 'finc' increases as 'fadv' is called repeatedly
   hinc : ∀ s h, ¬finc (fadv s h) ≤ finc s
+  -- Proof that 'finc' never exceeds 'bound'
+  hle : ∀ s, finc s ≤ bound s
   -- Proof that the bound doesn't change as 'fadv' is called
   hbound : ∀ s h, bound (fadv s h) = bound s
 
@@ -53,11 +99,85 @@ class LoopForward (α : Type) (β : outParam Type)
 class TerminationParam (β : Type) [LE β] where
   embed : OrderEmbedding β ℕ
 
+theorem tp_le_refl {β : Type} [LE β] [TerminationParam β] {b : β} : b ≤ b := by
+  apply TerminationParam.embed.map_rel_iff.mp
+  exact le_refl _
+
+-- Prove 'le_trans' for termination parameters based on the embedding in ℕ
+theorem tp_le_trans {β : Type} [LE β] [TerminationParam β] {a b c : β} :
+  a ≤ b → b ≤ c → a ≤ c := by
+  intro h₀ h₁
+  apply TerminationParam.embed.map_rel_iff.mp
+  apply le_trans (TerminationParam.embed.map_rel_iff.mpr h₀)
+  exact TerminationParam.embed.map_rel_iff.mpr h₁
+
+-- Prove 'le_antisymm' for termination parameters based on the embedding in ℕ
+theorem tp_le_antisymm {β : Type} [LE β] [TerminationParam β] {a b : β} :
+  a ≤ b → b ≤ a → a = b := by
+  intro h₀ h₁
+  apply TerminationParam.embed.inj.mp
+  apply le_antisymm (TerminationParam.embed.map_rel_iff.mpr h₀)
+  exact TerminationParam.embed.map_rel_iff.mpr h₁
+
+-- Prove a variant of 'lt_of_le_of_ne' for termination parameters
+-- based on the embedding in ℕ
+theorem tp_lt_of_le_of_ne {β : Type} [LE β] [TerminationParam β] {a b : β} :
+  a ≤ b → a ≠ b → ¬b ≤ a := by
+  intro h₀ h₁
+  contrapose h₁
+  exact tp_le_antisymm h₀ h₁
+
+-- A termination parameter with an increment function
+class TermParamInc (β : Type) [LE β] extends TerminationParam β where
+  -- Function for incrementing the parameter
+  adv : β → β
+  -- Maximum value of β - calling 'adv' on this value is not well-behaved
+  -- TODO: This seems to rule out non-finite parameter types
+  -- (such as a BigInt), but for now I don't see a way to get
+  -- that to work within the existing class hierarchy.
+  maxVal : β
+  -- Proof that the increment carries across the embedding to ℕ
+  hadv (b : β) (hnle : ¬maxVal ≤ b) : embed (adv b) = embed b + 1
+  -- All elements of type β are less than or equal to 'maxVal'
+  hlemv : ∀ b, b ≤ maxVal
+
+-- Prove a variant of 'lt_of_add_one_le' for termination parameters
+-- based on the embedding in ℕ
+theorem tpi_lt_of_add_one_le {β : Type} [LE β] [TermParamInc β] {a b : β}
+  (hltmax : ¬TermParamInc.maxVal ≤ a) :
+  TermParamInc.adv a ≤ b → ¬b ≤ a := by
+  intro h
+  apply TerminationParam.embed.map_rel_iff.mpr at h
+  rw [TermParamInc.hadv _ hltmax] at h
+  apply Nat.lt_of_add_one_le at h
+  contrapose! h
+  exact TerminationParam.embed.map_rel_iff.mpr h
+
+-- Prove a variant of 'add_one_le_of_lt' for termination parameters
+-- based on the embedding in ℕ
+theorem tpi_add_one_le_of_lt {β : Type} [LE β] [TermParamInc β] {a b : β}
+  (hltmax : ¬TermParamInc.maxVal ≤ a) :
+  ¬b ≤ a → TermParamInc.adv a ≤ b := by
+  intro h
+  apply TerminationParam.embed.map_rel_iff.mp
+  rw [TermParamInc.hadv _ hltmax]
+  apply Nat.add_one_le_of_lt
+  contrapose! h
+  exact TerminationParam.embed.map_rel_iff.mp h
+
+-- Prove a variant of 'lt_add_one' for termination parameters
+-- based on the embedding in ℕ
+theorem tpi_lt_add_one {β : Type} [LE β] [TermParamInc β] {a : β}
+  (hltmax : ¬TermParamInc.maxVal ≤ a) : ¬TermParamInc.adv a ≤ a := by
+  rw [← TerminationParam.embed.map_rel_iff, TermParamInc.hadv _ hltmax]
+  push_neg
+  exact Nat.lt_add_one _
+
 -- Prove that a LoopReverse' is also a 'LoopBase'
 instance (α β : Type)
   [LE β] [DecidableRel (· ≤ · : β → β → Prop)]
   [TerminationParam β] [LoopReverse α β] : LoopBase α where
-  term := fun s ↦ decide (LoopReverse.fdec s ≤ LoopReverse.bound s)
+  term := LoopReverse.term
   adv := LoopReverse.fadv
   fdec := fun s ↦ TerminationParam.embed (LoopReverse.fdec s)
   hdec := by
@@ -69,7 +189,7 @@ instance (α β : Type)
 instance (α β : Type)
   [LE β] [DecidableRel (· ≤ · : β → β → Prop)]
   [TerminationParam β] [LoopForward α β] : LoopBase α where
-  term := fun s ↦ decide (LoopForward.bound s ≤ LoopForward.finc s)
+  term := LoopForward.term
   adv := LoopForward.fadv
   fdec := fun s ↦
     TerminationParam.embed (LoopForward.bound s) -
@@ -79,15 +199,203 @@ instance (α β : Type)
     rw [LoopForward.hbound]
     by_contra! h'
     let embed : β ↪o ℕ := TerminationParam.embed
-    by_cases hle :
-      embed (LoopForward.finc (LoopForward.fadv s h)) ≤ embed (LoopForward.bound s)
-    · apply LoopForward.hinc s h
-      exact embed.map_rel_iff'.mp (Nat.le_of_sub_le_sub_left hle h')
-    rename' hle => hlt; push_neg at hlt
-    rw [Nat.sub_eq_zero_of_le (le_of_lt hlt)] at h'
-    simp only [decide_eq_true_eq] at h
-    apply h (embed.map_rel_iff'.mp _)
-    exact Nat.le_of_sub_eq_zero (Nat.eq_zero_of_le_zero h')
+    apply LoopForward.hinc s h
+    apply embed.map_rel_iff.mp (Nat.le_of_sub_le_sub_left _ h')
+    convert embed.map_rel_iff.mpr (LoopForward.hle (LoopForward.fadv s h)) using 1
+    rw [LoopForward.hbound]
+
+-- The upper bound for a forward loop does not change over its execution
+@[simp] theorem loop_forward_bound_const (α β : Type)
+  [LE β] [DecidableRel (· ≤ · : β → β → Prop)]
+  [TerminationParam β] [LoopForward α β] (s : α) :
+  LoopForward.bound (do_loop s) = LoopForward.bound s := by
+  apply loop_val_const
+  exact LoopForward.hbound
+
+-- Parameters for a search loop
+-- The loop will find the first value of type α which satisfies 'f'
+structure LoopSearchParams (α : Type) [LE α] [TermParamInc α] where
+  start : α
+  finish : α
+  f : α → Bool
+  hsle : start ≤ finish
+  hfle : finish ≤ TermParamInc.maxVal
+  hsat : f finish
+
+-- Current state of a search loop
+structure LoopSearch {α : Type} [LE α] [TermParamInc α]
+  (P : LoopSearchParams α) where
+  cur : α
+  hle : cur ≤ P.finish
+
+-- 'LoopSearch' corresponding to the start of the search
+def init_search {α : Type} [LE α] [TermParamInc α]
+  (P : LoopSearchParams α) : LoopSearch P where
+  cur := P.start
+  hle := P.hsle
+
+-- Prove that the current search state satisfies the search requirements
+-- assuming the termination parameter has reached 'finish'
+lemma loop_search_sat_of_finish_le {α : Type} [LE α]
+  [TermParamInc α] {P : LoopSearchParams α}
+  {s : LoopSearch P} (h : P.finish ≤ s.cur) : P.f s.cur = true := by
+  rw [tp_le_antisymm s.hle h]
+  exact P.hsat
+
+-- Prove that the current search state satisfies the search requirements
+-- assuming the termination parameter has reached its maximum value
+lemma loop_search_sat_of_maxval_le {α : Type} [LE α]
+  [TermParamInc α] {P : LoopSearchParams α}
+  {s : LoopSearch P} (h : TermParamInc.maxVal ≤ s.cur) : P.f s.cur = true := by
+  apply loop_search_sat_of_finish_le
+  exact tp_le_trans P.hfle h
+
+-- Prove that we can advance the termination parameter
+-- based on its embedding into the natural numbers
+lemma term_param_inc_adv_of_loop_search {α : Type} [LE α]
+  [TermParamInc α] {P : LoopSearchParams α}
+  {s : LoopSearch P} (hterm : ¬P.f s.cur = true) :
+  TerminationParam.embed (TermParamInc.adv s.cur) =
+  TerminationParam.embed (s.cur) + 1 := by
+  apply TermParamInc.hadv
+  contrapose! hterm
+  exact loop_search_sat_of_maxval_le hterm
+
+-- Define the advancement function for 'LoopSearch'
+def loop_search_advance {α : Type} [LE α]
+  [DecidableRel (· ≤ · : α → α → Prop)] [TermParamInc α] {P : LoopSearchParams α}
+  (s : LoopSearch P) (hterm : ¬P.f s.cur = true) : LoopSearch P where
+  cur := TermParamInc.adv s.cur
+  -- Use the embedding into ℕ to prove that the termination bound is not exceeded
+  hle := by
+    apply tpi_add_one_le_of_lt <;> contrapose! hterm
+    · exact loop_search_sat_of_maxval_le hterm
+    · exact loop_search_sat_of_finish_le hterm
+
+lemma loop_search_advance_cur {α : Type} [LE α]
+  [DecidableRel (· ≤ · : α → α → Prop)] [TermParamInc α] {P : LoopSearchParams α}
+  (s : LoopSearch P) (hterm : ¬P.f s.cur = true) :
+  (loop_search_advance s hterm).cur = TermParamInc.adv s.cur := rfl
+
+-- Prove that 'LoopSearch' is a ForwardLoop
+instance (α : Type)
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {P : LoopSearchParams α} : LoopForward (LoopSearch P) α where
+  bound := fun _ ↦ P.finish
+  term := fun s ↦ P.f s.cur
+  finc := LoopSearch.cur
+  fadv := loop_search_advance
+  hinc := by
+    intro s hterm
+    rw [loop_search_advance_cur]
+    apply tpi_lt_add_one
+    contrapose! hterm
+    exact loop_search_sat_of_maxval_le hterm
+  hle := LoopSearch.hle
+  hbound := fun _ _ ↦ rfl
+
+-- Perform a search, given the search parameters
+def do_search {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  (P : LoopSearchParams α) : α :=
+  (do_loop (init_search P)).cur
+
+-- The result of the search will satisfy P.f
+theorem loop_search_sat {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  (P : LoopSearchParams α) :
+  P.f (do_search P) := loop_term (init_search P)
+
+-- The result of the search will be the first after P.start to satisfy P.f
+theorem loop_search_first {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  (P : LoopSearchParams α) :
+  ∀ a : α, P.f a → P.start ≤ a → do_search P ≤ a := by
+  intro a hsat lea
+  by_contra h
+  let prop (s : LoopSearch P) : Prop :=
+    ∀ a : α, P.start ≤ a → ¬s.cur ≤ a → ¬P.f a
+  have base : prop (init_search P) := by
+    intro a lea alt
+    contradiction
+  have step : ∀ t hterm, prop t → prop (LoopBase.adv t hterm) := by
+    intro t hterm hprop a lea alt
+    change ¬P.f t.cur at hterm
+    change ¬TermParamInc.adv t.cur ≤ a at alt
+    let embed : α ↪o ℕ := TerminationParam.embed
+    contrapose! alt
+    apply tpi_add_one_le_of_lt
+    · contrapose! hterm
+      exact loop_search_sat_of_maxval_le hterm
+    have nea : t.cur ≠ a := by
+      contrapose! hterm
+      rwa [hterm]
+    apply tp_lt_of_le_of_ne _ nea
+    by_contra! h
+    exact False.elim (hprop a lea h alt)
+  have := loop_prop_const (init_search P) prop base step
+  exact False.elim (this a lea h hsat)
+
+-- Define the parameters for a search based on an existential statement
+def search_ex_params {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} {f : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ f a = true) : LoopSearchParams α where
+  start := start
+  finish := finish
+  f := fun b ↦ decide (f b = true ∨ finish ≤ b)
+  hsle := by
+    rcases h with ⟨a, sle, lef, h⟩
+    exact tp_le_trans sle lef
+  hfle := TermParamInc.hlemv finish
+  hsat := by
+    simp only [decide_eq_true_eq]
+    exact Or.inr tp_le_refl
+
+-- Search for the first instance of α in a range that satisfies
+-- some f : α → Bool, given a statement that such an α exists
+def do_search_ex {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} {f : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ f a = true) : α :=
+  do_search (search_ex_params h)
+
+-- Prove that the result of the search satisfies the search
+theorem loop_search_ex_sat {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} {f : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ f a = true) :
+  f (do_search_ex h) = true := by
+  let P := search_ex_params h
+  have : P.f (do_search_ex h) = true := loop_search_sat _
+  unfold P search_ex_params at this; dsimp at this
+  unfold do_search_ex
+  unfold do_search_ex at this
+  simp only [decide_eq_true_eq] at this
+  rcases this with lhs | rhs
+  · assumption
+  rcases h with ⟨a, lea, ale, ha⟩
+  have ha' : P.f a = true := by
+    unfold P search_ex_params; dsimp
+    rw [decide_eq_true_eq]
+    exact Or.inl ha
+  convert ha
+  apply tp_le_antisymm (loop_search_first P a ha' lea)
+  exact tp_le_trans ale rhs
+
+-- The result of the search will be the first value after 'start' to satisfy 'f'
+theorem loop_search_ex_first {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} {f : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ f a = true) :
+  ∀ a : α, f a → start ≤ a → do_search_ex h ≤ a := by
+  intro a ha lea
+  unfold do_search_ex
+  unfold search_ex_params
+  apply loop_search_first <;> dsimp
+  · simp only [decide_eq_true_eq]
+    exact Or.inl ha
+  · exact lea
 
 -- Define a loop which uses an iterator
 class LoopIterator (α : Type) (β : outParam Type) [DecidableEq β] [Iterator β] where
@@ -138,8 +446,8 @@ lemma int32_embed_toFun_toInt (i : Int32) : (int32_embed_toFun i) = i.toInt + 2^
   rw [zero_sub]
   exact int32_minval_le_toInt _
 
--- Prove that Int32 satisfies the requirements of a termination parameter
-instance : TerminationParam Int32 where
+-- Prove that Int32 satisfies the requirements of a termination parameter with increment
+instance : TermParamInc Int32 where
   embed := {
     toFun := int32_embed_toFun
     inj' := by
@@ -153,8 +461,19 @@ instance : TerminationParam Int32 where
       rw [int32_embed_toFun_toInt, int32_embed_toFun_toInt]
       rw [Int.add_le_add_iff_right, Int32.le_iff_toInt_le]
   }
+  adv := fun i ↦ i + 1
+  maxVal := Int32.maxValue
+  hadv := by
+    intro i h; dsimp
+    apply Int.ofNat_inj.mp
+    rw [Int.natCast_add, Int.ofNat_one]
+    rw [int32_embed_toFun_toInt, int32_embed_toFun_toInt]
+    rw [add_right_comm, int32_toInt_succ]
+    exact Int32.not_le.mp h
+  hlemv := Int32.le_maxValue
 
 -- A loop that advances by incrementing a 32-bit integer
+-- TODO: This seems obsolete. Consider removing it
 class LoopIncI32 (α : Type) where
   -- Variable to track our progress through the loop
   cur : α → Int32
@@ -167,6 +486,8 @@ class LoopIncI32 (α : Type) where
   adv : (s : α) → ¬decide (finish s ≤ cur s) = true → α
   -- 'inc' must be positive
   hpos : ∀ (s : α), 0 < (inc s)
+  -- 'cur' must be no greater than 'finish' + 'inc'
+  hle : ∀ s, cur s ≤ finish s + inc s
   -- A proof that the loop execution will not exceed the 32-bit limit
   hsafe : ∀ (s : α), (finish s).toInt + (inc s).toInt ≤ Int32.maxValue.toInt
   -- Proof that 'adv' increments 'cur' as long as 'cur' < 'finish'
@@ -207,7 +528,8 @@ lemma loop_incI32_toInt_finish_add_inc {α : Type} [LoopIncI32 α] (s : α) :
 
 -- Prove that a 'LoopIncI32' is a 'LoopForward'
 instance (α : Type) [LoopIncI32 α] : LoopForward α Int32 where
-  bound := LoopIncI32.finish
+  bound := fun s ↦ LoopIncI32.finish s + LoopIncI32.inc s
+  term := fun s ↦ LoopIncI32.finish s ≤ LoopIncI32.cur s
   finc := LoopIncI32.cur
   fadv := fun s h ↦ LoopIncI32.adv s h
   hinc := by
@@ -219,67 +541,10 @@ instance (α : Type) [LoopIncI32 α] : LoopForward α Int32 where
     rw [Int32.toInt_zero, add_zero] at this
     apply Int32.lt_iff_toInt_lt.mpr
     rwa [loop_incI32_toInt_cur_add_inc s h]
-  hbound := fun s h ↦ LoopIncI32.hfinish s h
-
--- If a property of the loop state is constant across calls to 'adv'
--- it will be constant over the full execution of the loop
-theorem loop_prop_const {α : Type} [LoopBase α] (s : α)
-  (prop : α → Prop) (base : prop s)
-  (step : ∀ t hlt, prop t → prop (LoopBase.adv t hlt)) :
-  prop (do_loop s) := by
-  unfold do_loop
-  split_ifs with h
-  · exact base
-  · apply loop_prop_const _ _ _ step
-    exact step s h base
-termination_by LoopBase.fdec s
-decreasing_by
-  exact LoopBase.hdec s h
-
--- If a value in the loop state is constant across calls to 'adv'
--- it will be constant over the full execution of the loop
-theorem loop_val_const {α β : Type} [LoopBase α] (s : α)
-  (f : α → β) (hconst : ∀ t hlt, f (LoopBase.adv t hlt) = f t) :
-  f (do_loop s) = f s := by
-  -- Prove this as a special case of 'loop_prop_const'
-  let prop : α → Prop := fun t ↦ f t = f s
-  have base : prop s := rfl
-  have step : ∀ t hlt, prop t → prop (LoopBase.adv t hlt) := by
-    intro t hlt
-    unfold prop
-    rw [hconst t hlt]
-    exact id
-  exact loop_prop_const s prop base step
-
--- After loop execution is complete,
--- the termination requirement has been met
-theorem loop_term {α : Type} [LoopBase α] (s : α) :
-  LoopBase.term (do_loop s) := by
-  unfold do_loop
-  split_ifs with h
-  · assumption
-  · apply loop_term
-termination_by LoopBase.fdec s
-decreasing_by
-  exact LoopBase.hdec s h
-
--- The upper bound for a forward loop does not change over its execution
-@[simp] theorem loop_forward_bound_const (α β : Type)
-  [LE β] [DecidableRel (· ≤ · : β → β → Prop)]
-  [TerminationParam β] [LoopForward α β] (s : α) :
-  LoopForward.bound (do_loop s) = LoopForward.bound s := by
-  apply loop_val_const
-  exact LoopForward.hbound
-
--- After the execution of a forward loop,
--- the termination parameter will have exceeded the bound
-theorem loop_forward_bound_le (α β : Type)
-  [LE β] [DecidableRel (· ≤ · : β → β → Prop)]
-  [TerminationParam β] [LoopForward α β] (s : α) :
-  LoopForward.bound s ≤ LoopForward.finc (do_loop s) := by
-  have := loop_term s
-  simp only [LoopBase.term, decide_eq_true_eq] at this
-  rwa [loop_forward_bound_const] at this
+  hle := LoopIncI32.hle
+  hbound := by
+    intro s h
+    rw [LoopIncI32.hfinish, LoopIncI32.hinc]
 
 -- 'finish' is unmodified by the loop's execution
 @[simp] theorem loop_incI32_finish_const {α : Type} [LoopIncI32 α] (s : α) :
