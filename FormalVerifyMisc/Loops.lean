@@ -127,6 +127,17 @@ theorem tp_lt_of_le_of_ne {β : Type} [LE β] [TerminationParam β] {a b : β} :
   contrapose h₁
   exact tp_le_antisymm h₀ h₁
 
+-- This theorem has no analogue in the natural numbers but is useful
+-- for termination parameters because we only assume '≤' is defined but not '<'
+-- Proof is based on the embedding in ℕ
+theorem tp_ge_of_not_le {β : Type} [LE β] [TerminationParam β] {a b : β} :
+  ¬a ≤ b → b ≤ a := by
+  intro nle
+  apply TerminationParam.embed.map_rel_iff.mp
+  contrapose! nle
+  apply TerminationParam.embed.map_rel_iff.mp
+  exact le_of_lt nle
+
 -- A termination parameter with an increment function
 class TermParamInc (β : Type) [LE β] extends TerminationParam β where
   -- Function for incrementing the parameter
@@ -250,16 +261,21 @@ lemma loop_search_sat_of_maxval_le {α : Type} [LE α]
   apply loop_search_sat_of_finish_le
   exact tp_le_trans P.hfle h
 
+lemma term_param_lt_max_of_not_term {α : Type} [LE α]
+  [TermParamInc α] {P : LoopSearchParams α}
+  {s : LoopSearch P} (hterm : ¬P.f s.cur = true) :
+  ¬TermParamInc.maxVal ≤ s.cur := by
+  contrapose! hterm
+  exact loop_search_sat_of_maxval_le hterm
+
 -- Prove that we can advance the termination parameter
 -- based on its embedding into the natural numbers
 lemma term_param_inc_adv_of_loop_search {α : Type} [LE α]
   [TermParamInc α] {P : LoopSearchParams α}
   {s : LoopSearch P} (hterm : ¬P.f s.cur = true) :
   TerminationParam.embed (TermParamInc.adv s.cur) =
-  TerminationParam.embed (s.cur) + 1 := by
-  apply TermParamInc.hadv
-  contrapose! hterm
-  exact loop_search_sat_of_maxval_le hterm
+  TerminationParam.embed (s.cur) + 1 :=
+  TermParamInc.hadv _ (term_param_lt_max_of_not_term hterm)
 
 -- Define the advancement function for 'LoopSearch'
 def loop_search_advance {α : Type} [LE α]
@@ -336,6 +352,45 @@ theorem loop_search_first {α : Type}
   have := loop_prop_const (init_search P) prop base step
   exact False.elim (this a lea h hsat)
 
+-- The termination parameter returned by the search will be
+-- greater than or equal to the starting point of the search
+theorem loop_search_ge {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  (P : LoopSearchParams α) :
+  P.start ≤ do_search P := by
+  let prop (s : LoopSearch P) : Prop :=
+    P.start ≤ s.cur
+  have base : prop (init_search P) := tp_le_refl
+  have step : ∀ t hterm, prop t → prop (LoopBase.adv t hterm) := by
+    unfold prop
+    intro t hterm hprop
+    change ¬P.f t.cur at hterm
+    change P.start ≤ TermParamInc.adv t.cur
+    have ltmax := term_param_lt_max_of_not_term hterm
+    exact tp_le_trans hprop (tp_ge_of_not_le (tpi_lt_add_one ltmax))
+  exact loop_prop_const (init_search P) prop base step
+
+-- The termination parameter returned by the search will be
+-- less than or equal to the ending point of the search
+theorem loop_search_le {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  (P : LoopSearchParams α) :
+  do_search P ≤ P.finish := by
+  let prop (s : LoopSearch P) : Prop :=
+    s.cur ≤ P.finish
+  have base : prop (init_search P) := P.hsle
+  have step : ∀ t hterm, prop t → prop (LoopBase.adv t hterm) := by
+    unfold prop
+    intro t hterm hprop
+    change ¬P.f t.cur at hterm
+    change TermParamInc.adv t.cur ≤ P.finish
+    have ltmax := term_param_lt_max_of_not_term hterm
+    apply tpi_add_one_le_of_lt ltmax
+    contrapose! hterm
+    rw [tp_le_antisymm hprop hterm]
+    exact P.hsat
+  exact loop_prop_const (init_search P) prop base step
+
 -- Define the parameters for a search based on an existential statement
 def search_ex_params {α : Type}
   [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
@@ -396,6 +451,26 @@ theorem loop_search_ex_first {α : Type}
   · simp only [decide_eq_true_eq]
     exact Or.inl ha
   · exact lea
+
+-- The termination parameter returned by the search will be
+-- greater than or equal to the starting point of the search
+theorem loop_search_ex_ge {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} {f : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ f a = true) :
+  start ≤ do_search_ex h := by
+  unfold do_search_ex
+  convert loop_search_ge (search_ex_params h)
+
+-- The termination parameter returned by the search will be
+-- less than or equal to the ending point of the search
+theorem loop_search_ex_le {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} {f : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ f a = true) :
+  do_search_ex h ≤ finish := by
+  unfold do_search_ex
+  convert loop_search_le (search_ex_params h)
 
 -- Define a loop which uses an iterator
 class LoopIterator (α : Type) (β : outParam Type) [DecidableEq β] [Iterator β] where
