@@ -5,6 +5,7 @@ import Mathlib.Tactic.IntervalCases
 import Mathlib.Tactic.Linarith
 import Mathlib.Tactic.NormNum.Prime
 import FormalVerifyMisc.Int32.Basic
+import FormalVerifyMisc.Int32.Abs
 import FormalVerifyMisc.Iterator
 import FormalVerifyMisc.Loops
 
@@ -1090,5 +1091,54 @@ theorem primes_size_lt_sieve_size : primes.size < SIEVE_SIZE := by
   apply Int.lt_of_ofNat_lt_ofNat
   apply lt_of_lt_of_eq sieve_of_eratosthenes.hprimessize
   rw [← sieve_size_32_toInt, sieve_of_eratosthenes_index]
+
+-- For every 32-bit integer that is not prime and not equal to 1 or -1,
+-- it is divisible by some member of 'primes'.
+theorem mem_primes_dvd_exists_of_not_prime
+  (n : Int32) (hnprime : ¬Nat.Prime n.toInt.natAbs) (hne1 : n.toInt.natAbs ≠ 1) :
+  ∃ p ∈ primes, p.toInt ∣ n.toInt := by
+  -- First handle the case where n = 0
+  by_cases nz : n = 0
+  · subst nz
+    exact ⟨2, And.intro primes_two_mem ⟨0, by decide⟩⟩
+  rename' nz => nnz; push_neg at nnz
+  -- Handle the case where n = -2^31
+  by_cases nmin : n = Int32.minValue
+  · subst nmin
+    exact ⟨2, And.intro primes_two_mem ⟨-2^30, by decide⟩⟩
+  rename' nmin => nnemin; push_neg at nnemin
+  have minltn := int32_minval_lt_of_ne_minval _ nnemin.symm
+  -- The absolute value of n is at least two
+  have twole : 2 ≤ n.toInt.natAbs := by
+    by_contra! h
+    apply nnz (Int32.toInt_inj.mp (Int.natAbs_eq_zero.mp _))
+    by_contra! nnz
+    interval_cases n.toInt.natAbs
+    · exact nnz rfl
+    · exact hne1 rfl
+  -- Since n is not prime, it must have some divisor less than or equal to its square root
+  rw [Nat.prime_def_le_sqrt] at hnprime; push_neg at hnprime
+  rcases hnprime twole with ⟨d, led, dle, ddvd⟩
+  -- That divisor must be less than the size of the sieve
+  have dle' : d < SIEVE_SIZE := by
+    unfold SIEVE_SIZE
+    by_contra! led'
+    have h := Nat.mul_le_mul led' led'
+    absurd le_trans h (Nat.mul_le_mul dle dle)
+    push_neg
+    apply lt_trans (Nat.sqrt_mul_sqrt_lt_succ _)
+    apply lt_trans (Nat.add_lt_add_right (int32_natAbs_toInt_lt n minltn) 1)
+    decide
+  have dne1 : d ≠ 1 := by
+    intro h; subst h
+    absurd led; decide
+  -- Let p be a prime a prime dividing d
+  rcases Nat.exists_prime_and_dvd dne1 with ⟨p, pprime, pdvd⟩
+  have ple := Nat.le_of_dvd (lt_of_lt_of_le (by decide) led) pdvd
+  -- Since d < SIEVE_SIZE, there must exist p' ∈ primes such that p' divides d
+  rcases mem_primes_of_prime_of_lt p pprime (lt_of_le_of_lt ple dle') with ⟨p', p'mem, hp'⟩
+  rw [← Int.ofNat_dvd, ← hp'] at pdvd
+  -- Since p' ∣ d and d ∣ n, p' ∣ n
+  exact ⟨p', p'mem, Int.dvd_trans pdvd (Int.dvd_natAbs.mp (Int.ofNat_dvd.mpr ddvd))⟩
 
 end CodeChef
