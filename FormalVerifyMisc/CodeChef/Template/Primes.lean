@@ -1141,4 +1141,77 @@ theorem mem_primes_dvd_exists_of_not_prime
   -- Since p' ∣ d and d ∣ n, p' ∣ n
   exact ⟨p', p'mem, Int.dvd_trans pdvd (Int.dvd_natAbs.mp (Int.ofNat_dvd.mpr ddvd))⟩
 
+-- If a 32-bit integer, n, is not prime, there exists some element of 'primes'
+-- that divides 'n' and is less than or equal to the square root of its absolute value.
+lemma mem_primes_dvd_le_sqrt_exists_of_not_prime
+  (n : Int32) (hnprime : ¬Nat.Prime n.toInt.natAbs) (ltn : 1 < n.toInt.natAbs) :
+  ∃ p ∈ primes, p.toInt ∣ n.toInt ∧ p.toInt ≤ |n.toInt| / p.toInt := by
+  have hne1 : n.toInt.natAbs ≠ 1 := (ne_of_lt ltn).symm
+  rcases mem_primes_dvd_exists_of_not_prime n hnprime hne1 with ⟨p, pmem, pdvd⟩
+  have ppos : 0 < p.toInt := Int32.lt_iff_toInt_lt.mp (primes_pos p pmem)
+  -- If 'p' is small enough, that is our solution
+  by_cases ple : p.toInt ≤ |n.toInt| / p.toInt
+  · exact ⟨p, pmem, ⟨pdvd, ple⟩⟩
+  -- If not, we'll get the other member of the divisor pair (call it, 'k')
+  have ltp := not_le.mp ple; clear ple
+  rcases Int.natAbs_dvd_natAbs.mpr pdvd with ⟨k, hk⟩
+  have kdvd : k ∣ n.toInt.natAbs := by
+    use p.toInt.natAbs
+    rwa [mul_comm]
+  rw [← Int.natCast_inj, Int.natCast_mul] at hk
+  rw [Int.ofNat_natAbs_of_nonneg (le_of_lt ppos)] at hk
+  have klt : k < p.toInt := by
+    rw [← Int.abs_eq_natAbs] at hk
+    rw [hk] at ltp
+    rwa [Int.mul_ediv_cancel_left] at ltp
+    exact (ne_of_lt ppos).symm
+  -- If k = 1, n would be prime - a contradiction
+  have kne1 : k ≠ 1 := by
+    by_contra k1; subst k1
+    apply hnprime
+    rcases prime_of_mem_primes p pmem with ⟨p', hp', p'prime⟩
+    rw [hp'] at hk
+    simp only [Nat.cast_one, mul_one] at hk
+    rw [Int.natCast_inj] at hk
+    rwa [hk]
+  have kpos : 0 < k := by
+    apply Nat.pos_of_ne_zero
+    contrapose! ltn; subst ltn
+    apply Int.le_of_ofNat_le_ofNat
+    rw [hk]
+    simp only [Nat.cast_zero, mul_zero]; decide
+  -- Get a prime that divides k
+  rcases Nat.exists_prime_and_dvd kne1 with ⟨q', q'prime, q'dvd⟩
+  -- Prove that q' is small enough, it corresponds to an element of 'primes'
+  have q'le : q' ≤ k :=
+    Nat.le_of_dvd kpos q'dvd
+  have q'le' : q' ≤ p.toInt :=
+    le_trans (Int.ofNat_le_ofNat_of_le q'le) (le_of_lt klt)
+  have q'lt : q' < SIEVE_SIZE := by
+    apply lt_of_le_of_lt q'le (Int.lt_of_ofNat_lt_ofNat _)
+    exact lt_trans klt (lt_of_mem_primes p pmem)
+  have q'nz : (q' : ℤ) ≠ 0 := by
+    intro h
+    apply Nat.Prime.ne_zero q'prime
+    rw [← Int.natCast_inj, h]; rfl
+  -- Get the member of primes which corresponds to q'
+  rcases mem_primes_of_prime_of_lt q' q'prime q'lt with ⟨q, qmem, hq⟩
+  use q, qmem
+  rw [hq]
+  constructor
+  · apply Int.dvd_trans (Int.natCast_dvd_natCast.mpr q'dvd)
+    apply Int.dvd_trans (Int.natCast_dvd_natCast.mpr kdvd)
+    exact Int.natAbs_dvd_self
+  · rcases q'dvd with ⟨k', hk'⟩
+    rw [Int.abs_eq_natAbs, hk, hk', Int.natCast_mul]
+    rw [mul_comm (q' : ℤ), ← mul_assoc]
+    rw [Int.mul_ediv_cancel _ q'nz, ← Int.mul_one (q' : ℤ)]
+    apply Int.mul_le_mul q'le' _ (by decide) (le_of_lt ppos)
+    rw [← Int.ofNat_one]
+    apply Int.ofNat_le_ofNat_of_le
+    apply Nat.one_le_of_lt (Nat.pos_of_ne_zero _)
+    by_contra! h; subst h
+    rw [mul_zero] at hk'; subst hk'
+    absurd kpos; decide
+
 end CodeChef
