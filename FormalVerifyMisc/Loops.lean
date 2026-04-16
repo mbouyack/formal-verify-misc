@@ -407,6 +407,12 @@ def search_ex_params {α : Type}
     simp only [decide_eq_true_eq]
     exact Or.inr tp_le_refl
 
+@[simp] theorem search_ex_params_f {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} {f : α → Bool}
+  {h : ∃ a, start ≤ a ∧ a ≤ finish ∧ f a = true} :
+  (search_ex_params h).f = fun b ↦ decide (f b = true ∨ finish ≤ b) := rfl
+
 -- Search for the first instance of α in a range that satisfies
 -- some f : α → Bool, given a statement that such an α exists
 def do_search_ex {α : Type}
@@ -471,6 +477,133 @@ theorem loop_search_ex_le {α : Type}
   do_search_ex h ≤ finish := by
   unfold do_search_ex
   convert loop_search_le (search_ex_params h)
+
+-- Define search parameters for a search which returns 'Option α' in terms of 'search_ex_params'.
+-- For more information, see "do_search_opt" below.
+def search_opt_params {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} (f : α → Bool) {g : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ g a = true) : LoopSearchParams α :=
+  search_ex_params (by
+    let f' : α → Bool := fun a ↦ f a = true ∨ g a = true
+    change ∃ a, start ≤ a ∧ a ≤ finish ∧ f' a = true
+    rcases h with ⟨a, ale, lef, asat⟩
+    use a, ale, lef
+    unfold f'
+    simp only [Bool.decide_or, Bool.decide_eq_true, Bool.or_eq_true]
+    exact Or.inr asat
+  )
+
+@[simp] theorem search_opt_params_f_eq_true {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} (f : α → Bool) {g : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ g a = true) :
+  ∀ a, (search_opt_params f h).f a = true ↔ f a = true ∨ g a = true ∨ finish ≤ a := by
+  intro a
+  unfold search_opt_params
+  simp only [Bool.decide_or, Bool.decide_eq_true, search_ex_params_f, Bool.or_eq_true,
+    decide_eq_true_eq]
+  rw [or_assoc]
+
+@[simp] theorem search_opt_params_start {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} (f : α → Bool) {g : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ g a = true) :
+  (search_opt_params f h).start = start := rfl
+
+-- Search for the first element 'a' which satisfies either 'f' or 'g'
+-- If 'f' is satisfied first, the search is successful.
+-- If 'g' is satisfied first, the search has failed and the function returns "none"
+def do_search_opt {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} (f : α → Bool) {g : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ g a = true) : Option α :=
+  let a := do_search (search_opt_params f h)
+  if f a = true then some a else none
+
+-- Rewrite 'do_search_opt' as an invocation of 'do_search'
+-- (given that the search was successful)
+lemma search_opt_eq_of_ne_none {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} (f : α → Bool) {g : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ g a = true)
+  (hsome : do_search_opt f h ≠ none) :
+  (do_search_opt f h).get (Option.isSome_iff_ne_none.mpr hsome) =
+  do_search (search_opt_params f h) := by
+  unfold do_search_opt; dsimp
+  split_ifs with h' <;> simp
+
+-- The function, 'f', which indicates success is
+-- satisfied by the result of 'do_search_opt'
+theorem search_opt_sat_of_ne_none {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} (f : α → Bool) {g : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ g a = true)
+  (hsome : do_search_opt f h ≠ none) :
+  f ((do_search_opt f h).get (Option.isSome_iff_ne_none.mpr hsome)) = true := by
+  unfold do_search_opt; dsimp
+  split_ifs with h'
+  · rwa [Option.get_some]
+  · absurd hsome
+    unfold do_search_opt
+    rw [if_neg h']
+
+theorem search_opt_first_of_ne_none {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} (f : α → Bool) {g : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ g a = true)
+  (hsome : do_search_opt f h ≠ none) :
+  ∀ a, start ≤ a → (f a = true ∨ g a = true) →
+  (do_search_opt f h).get (Option.isSome_iff_ne_none.mpr hsome) ≤ a := by
+  intro a lea asat
+  rw [search_opt_eq_of_ne_none f h hsome]
+  apply loop_search_first
+  · simp only [search_opt_params_f_eq_true]
+    exact Or.elim asat (fun h' ↦ Or.inl h') (fun h' ↦ Or.inr (Or.inl h'))
+  · simpa only [search_opt_params_start]
+
+-- If the search failed, then there is some 'a' such that g a = true
+-- (that is, the failure function returns true) and for all 'b' such
+-- that f b = true (that is, the success function returns true), a ≤ b
+theorem search_opt_first_of_none {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} (f : α → Bool) {g : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ g a = true)
+  (hnone : do_search_opt f h = none) :
+  ∃ a, start ≤ a ∧ g a = true ∧ ∀ b, start ≤ b → f b = true → a ≤ b := by
+  use do_search (search_opt_params f h)
+  use loop_search_ge (search_opt_params f h)
+  -- Let 'a' be a value which satisfies g (the failure function)
+  have hcopy := h
+  rcases hcopy with ⟨a, lea, ale, asat⟩
+  -- Prove that the search result is not greater than 'a'
+  have lea' : do_search (search_opt_params f h) ≤ a := by
+    apply loop_search_first (search_opt_params f h)
+    · simp only [search_opt_params_f_eq_true]
+      exact Or.inr (Or.inl asat)
+    · simpa only [search_opt_params_start]
+  -- Prove that the search result satisfies g (the failure function)
+  have hsat : g (do_search (search_opt_params f h)) = true := by
+    unfold do_search_opt at hnone
+    dsimp at hnone
+    split_ifs at hnone with h'
+    · have := loop_search_sat (search_opt_params f h)
+      simp only [search_opt_params_f_eq_true] at this
+      replace := Or.resolve_left this h'
+      rcases this with lhs | rhs
+      · assumption
+      · -- Prove that 'a', 'finish', and the search result must all be the same
+        have hfinish := tp_le_antisymm rhs (loop_search_le _)
+        rw [← hfinish]
+        rw [← hfinish] at lea'
+        convert asat
+        exact tp_le_antisymm lea' ale
+  use hsat
+  intro b leb bsat
+  apply loop_search_first
+  · simp only [search_opt_params_f_eq_true]
+    exact Or.inl bsat
+  · simpa only [search_opt_params_start]
 
 -- Define a loop which uses an iterator
 class LoopIterator (α : Type) (β : outParam Type) [DecidableEq β] [Iterator β] where
