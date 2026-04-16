@@ -984,6 +984,10 @@ theorem mem_primes_of_prime_of_lt (p : ℕ) (hprime : Nat.Prime p) (plt : p < SI
   rw [← sieve_size_32_toInt, ← sieve_of_eratosthenes_index] at plt
   exact Array.exists_of_mem_map ((S.hpmem_iff _).mpr ⟨plt, hprime⟩)
 
+theorem primes_increasing :
+  ∀ (m n : ℕ) (mlt : m < n) (nlt : n < primes.size),
+  primes[m] < primes[n] := sieve_of_eratosthenes.hprimesinc
+
 @[simp] theorem divs_size : divs.size = SIEVE_SIZE := by
   unfold divs
   apply Int.ofNat_inj.mp
