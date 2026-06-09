@@ -521,6 +521,38 @@ def do_search_opt {α : Type}
   let a := do_search (search_opt_params f h)
   if f a = true then some a else none
 
+-- If a search will succeed before it fails, the result is not "none"
+theorem do_search_opt_ne_none {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} (f : α → Bool) {g : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ g a = true)
+  (h' : ∃ a, start ≤ a ∧ a ≤ finish ∧ f a = true ∧
+    ∀ b, start ≤ b ∧ b ≤ a → g b = false) :
+  do_search_opt f h ≠ none := by
+  unfold do_search_opt
+  rcases h' with ⟨a, lea, ale, ha₀, ha₁⟩
+  simp only [ne_eq, ite_eq_right_iff, reduceCtorEq, imp_false, Bool.not_eq_true, Bool.not_eq_false]
+  let P := search_opt_params f h
+  let i : α := do_search P
+  change f i = true
+  by_cases hai : a = i
+  · exact hai ▸ ha₀
+  have lei : start ≤ i := loop_search_ge P
+  have hsat : P.f i = true := loop_search_sat _
+  have ilea : i ≤ a := by
+    apply loop_search_first P a _ lea
+    unfold P
+    rw [search_opt_params_f_eq_true]
+    exact Or.inl ha₀
+  unfold P at hsat
+  simp only [search_opt_params_f_eq_true] at hsat
+  apply Or.resolve_right hsat; clear hsat
+  rw [not_or, Bool.not_eq_true]
+  use ha₁ i ⟨lei, ilea⟩
+  contrapose! hai
+  apply tp_le_antisymm _ ilea
+  exact tp_le_trans ale hai
+
 -- Rewrite 'do_search_opt' as an invocation of 'do_search'
 -- (given that the search was successful)
 lemma search_opt_eq_of_ne_none {α : Type}
