@@ -1026,6 +1026,40 @@ theorem primes_ne_empty : primes ≠ #[] :=
 theorem primes_size_pos : 0 < primes.size :=
   Array.size_pos_of_mem primes_two_mem
 
+-- The first prime is '2'
+theorem primes_getElem_zero_eq_two : primes[0]'(primes_size_pos) = 2 := by
+  rcases Array.getElem_of_mem primes_two_mem with ⟨i, ilt, hi⟩
+  by_cases iz : i = 0
+  · subst iz; assumption
+  rename' iz => inz; push_neg at inz
+  have ipos : 0 < i := Nat.pos_of_ne_zero inz
+  -- If the first prime is not 2, it must be less than 2
+  have pzlt : primes[0] < 2 := by
+    rw [← hi]
+    exact primes_increasing 0 i ipos ilt
+  have hmem := Array.getElem_mem primes_size_pos
+  have pzpos := primes_pos _ hmem
+  -- Since all primes are positive, the first prime must be 1
+  have pz1 : primes[0] = 1 := by
+    apply Int32.le_antisymm
+    · apply Int32.le_iff_toInt_le.mpr
+      simp only [Int32.reduceToInt]
+      apply Int.le_of_lt_add_one
+      rw [one_add_one_eq_two]
+      exact Int32.lt_iff_toInt_lt.mp pzlt
+    · apply Int32.le_iff_toInt_le.mpr
+      simp only [Int32.reduceToInt]
+      rw [← zero_add 1]
+      apply Int.add_one_le_of_lt
+      exact Int32.lt_iff_toInt_lt.mp pzpos
+  -- Since 1 is not actually prime, we reach a contradiction
+  absurd prime_of_mem_primes _ hmem; push_neg
+  intro p hp
+  rw [pz1] at hp
+  simp only [Int32.reduceToInt] at hp
+  rw [← Int.ofNat_inj.mp hp]
+  norm_num
+
 -- The last element in 'primes' is 999983
 -- We prove this by showing primes.back is at least that value and that all
 -- larger values less than SIEVE_SIZE are composite
