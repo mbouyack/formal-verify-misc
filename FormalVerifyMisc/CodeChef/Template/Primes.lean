@@ -1121,6 +1121,18 @@ theorem primes_back : primes.back (Array.size_pos_of_mem primes_two_mem) = 99998
   · use 3, 333333; simp
   · use 2, 500000; simp
 
+-- All elements of primes are less than or eqaul to 999983
+theorem primes_le : ∀ p ∈ primes, p ≤ 999983 := by
+  intro p pmem
+  rcases Array.getElem_of_mem pmem with ⟨i, ilt, hpi⟩
+  rw [← hpi, ← primes_back, Array.back_eq_getElem]
+  by_cases hi : i = primes.size - 1
+  · subst hi
+    exact Int32.le_refl _
+  apply Int32.le_of_lt
+  apply primes_increasing
+  exact Nat.lt_of_le_of_ne (Nat.le_sub_one_of_lt ilt) hi
+
 -- Prove that the size of the primes array is less than the sieve size
 -- Note that this result is less precise than 'primes_size' (above)
 -- but doesn't rely on "native decide"
