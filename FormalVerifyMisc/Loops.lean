@@ -527,7 +527,7 @@ theorem do_search_opt_ne_none {α : Type}
   {start finish : α} (f : α → Bool) {g : α → Bool}
   (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ g a = true)
   (h' : ∃ a, start ≤ a ∧ a ≤ finish ∧ f a = true ∧
-    ∀ b, start ≤ b ∧ b ≤ a → g b = false) :
+    ∀ b, start ≤ b ∧ ¬a ≤ b → g b = false) :
   do_search_opt f h ≠ none := by
   unfold do_search_opt
   rcases h' with ⟨a, lea, ale, ha₀, ha₁⟩
@@ -544,11 +544,14 @@ theorem do_search_opt_ne_none {α : Type}
     unfold P
     rw [search_opt_params_f_eq_true]
     exact Or.inl ha₀
+  have nalei : ¬a ≤ i := by
+    contrapose hai
+    exact tp_le_antisymm hai ilea
   unfold P at hsat
   simp only [search_opt_params_f_eq_true] at hsat
   apply Or.resolve_right hsat; clear hsat
   rw [not_or, Bool.not_eq_true]
-  use ha₁ i ⟨lei, ilea⟩
+  use ha₁ i ⟨lei, nalei⟩
   contrapose! hai
   apply tp_le_antisymm _ ilea
   exact tp_le_trans ale hai
