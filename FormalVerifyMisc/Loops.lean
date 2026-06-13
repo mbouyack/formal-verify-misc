@@ -568,6 +568,26 @@ lemma search_opt_eq_of_ne_none {α : Type}
   unfold do_search_opt; dsimp
   split_ifs with h' <;> simp
 
+-- If the search is successful the result will be greater than or equal to 'start
+theorem search_opt_ge_of_ne_none {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} (f : α → Bool) {g : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ g a = true)
+  (nenone : do_search_opt f h ≠ none) :
+  start ≤ (do_search_opt f h).get (Option.isSome_iff_ne_none.mpr nenone) := by
+  rw [search_opt_eq_of_ne_none f h nenone]
+  exact loop_search_ge (search_opt_params f h)
+
+-- If the search is successful the result will be less than or equal to 'finish'
+theorem search_opt_le_of_ne_none {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} (f : α → Bool) {g : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ g a = true)
+  (nenone : do_search_opt f h ≠ none) :
+  (do_search_opt f h).get (Option.isSome_iff_ne_none.mpr nenone) ≤ finish := by
+  rw [search_opt_eq_of_ne_none f h nenone]
+  exact loop_search_le _
+
 -- The function, 'f', which indicates success is
 -- satisfied by the result of 'do_search_opt'
 theorem search_opt_sat_of_ne_none {α : Type}
