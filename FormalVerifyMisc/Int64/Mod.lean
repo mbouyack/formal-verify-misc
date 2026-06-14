@@ -128,3 +128,15 @@ theorem int64_mul_div_add_mod
   rw [int64_toInt_add_of_bounds _ _ h₁]
   rw [int64_toInt_mul_of_bounds _ _ h₀]
   rwa [Int64.toInt_mod, int64_toInt_div _ _ h]
+
+-- For two 64-bit integers, a % b = 0 if-and-only-if
+-- b divides a when both are represented as (infinite precision) integers
+theorem int64_mod_eq_zero_iff_toInt_dvd (a b : Int64) :
+  a % b = 0 ↔ b.toInt ∣ a.toInt := by
+  rw [← Int64.toInt_inj, Int64.toInt_mod]
+  simp only [Int64.reduceToInt]
+  by_cases ann : 0 ≤ a.toInt
+  · rw [Int.tmod_eq_emod_of_nonneg ann, Int.dvd_iff_emod_eq_zero]
+  rw [← Int.neg_eq_zero, ← Int.neg_tmod, ← Int.dvd_neg]
+  have annn : 0 ≤ -a.toInt := Int.neg_le_neg (le_of_lt (Int.not_le.mp ann))
+  rw [Int.tmod_eq_emod_of_nonneg annn, Int.dvd_iff_emod_eq_zero]
