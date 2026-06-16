@@ -617,6 +617,23 @@ theorem search_opt_first_of_ne_none {α : Type}
     exact Or.elim asat (fun h' ↦ Or.inl h') (fun h' ↦ Or.inr (Or.inl h'))
   · simpa only [search_opt_params_start]
 
+-- If the search finds failure before success, the result is "none"
+theorem search_opt_none_of_fail_first {α : Type}
+  [LE α] [TermParamInc α] [DecidableRel (· ≤ · : α → α → Prop)]
+  {start finish : α} (f : α → Bool) {g : α → Bool}
+  (h : ∃ a, start ≤ a ∧ a ≤ finish ∧ g a = true)
+  (hfail : ∀ a, start ≤ a ∧ a ≤ finish ∧ f a = true →
+    ∃ b, start ≤ b ∧ ¬a ≤ b ∧ g b = true) :
+  do_search_opt f h = none := by
+  by_contra! nenone
+  let i := (do_search_opt f h).get (Option.isSome_iff_ne_none.mpr nenone)
+  have lei : start ≤ i := search_opt_ge_of_ne_none f h nenone
+  have ile : i ≤ finish := search_opt_le_of_ne_none f h nenone
+  have isat : f i = true := search_opt_sat_of_ne_none f h nenone
+  rcases hfail i ⟨lei, ile, isat⟩ with ⟨j, lej, jlt, hj⟩
+  have ilej : i ≤ j := search_opt_first_of_ne_none f h nenone j lej (Or.inr hj)
+  exact False.elim (jlt ilej)
+
 -- If the search failed, then there is some 'a' such that g a = true
 -- (that is, the failure function returns true) and for all 'b' such
 -- that f b = true (that is, the success function returns true), a ≤ b
