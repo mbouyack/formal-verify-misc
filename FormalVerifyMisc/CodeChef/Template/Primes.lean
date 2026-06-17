@@ -988,6 +988,18 @@ theorem primes_increasing :
   ∀ (m n : ℕ) (mlt : m < n) (nlt : n < primes.size),
   primes[m] < primes[n] := sieve_of_eratosthenes.hprimesinc
 
+-- In some contexts it is more useful to have this weaker result
+-- (rather than the strong "primes_increasing" above)
+theorem primes_nondecreasing :
+  ∀ (m n : ℕ) (mlt : m ≤ n) (nlt : n < primes.size),
+  primes[m] ≤ primes[n] := by
+  intro m n mlen nlt
+  by_cases hmn : m = n
+  · subst hmn
+    exact Int32.le_refl _
+  have mlt : m < n := lt_of_le_of_ne mlen hmn
+  exact Int32.le_of_lt (primes_increasing m n mlt nlt)
+
 @[simp] theorem divs_size : divs.size = SIEVE_SIZE := by
   unfold divs
   apply Int.ofNat_inj.mp
