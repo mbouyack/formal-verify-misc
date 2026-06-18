@@ -939,6 +939,9 @@ theorem sieve_of_eratosthenes_index :
 theorem primes_nonneg : ∀ n ∈ primes, 0 ≤ n :=
   fun n nmem ↦ sieve_of_eratosthenes.hprimesnn n nmem
 
+theorem primes_nonneg' : ∀ i, (ilt : i < primes.size) → 0 ≤ primes[i] :=
+  fun _ _ ↦ primes_nonneg _ (Array.getElem_mem _)
+
 -- The elements of 'primes' are in-fact prime
 theorem prime_of_mem_primes :
   ∀ n ∈ primes, ∃ (p : ℕ), n.toInt = p ∧ Nat.Prime p := by
@@ -1071,6 +1074,11 @@ theorem primes_getElem_zero_eq_two : primes[0]'(primes_size_pos) = 2 := by
   simp only [Int32.reduceToInt] at hp
   rw [← Int.ofNat_inj.mp hp]
   norm_num
+
+theorem primes_ge : ∀ i, (ilt : i < primes.size) → 2 ≤ primes[i] := by
+  intro i ilt
+  rw [← primes_getElem_zero_eq_two]
+  apply primes_nondecreasing _ _ (Nat.zero_le _)
 
 -- The last element in 'primes' is 999983
 -- We prove this by showing primes.back is at least that value and that all
