@@ -758,4 +758,50 @@ theorem smallest_divisor_dvd (n : Int32) :
   rw [dif_neg nabslt]
   exact divisor_search_dvd _
 
+theorem smallest_divisor_le (n : Int32) :
+  ∀ (a : Int32), 1 < a → a.toInt ∣ n.toInt → smallest_divisor n ≤ a := by
+  intro a lta advd
+  unfold smallest_divisor
+  have ltati := Int32.lt_iff_toInt_lt.mp lta
+  simp only [Int32.reduceToInt] at ltati
+  apply Int32.le_iff_toInt_le.mpr
+  by_cases nnemv : n = Int32.minValue
+  · rw [dif_pos nnemv]
+    simp only [Int32.reduceToInt]
+    rw [← one_add_one_eq_two]
+    apply Int.add_one_le_of_lt ltati
+  rw [dif_neg nnemv]
+  push_neg at nnemv
+  have mvltn : Int32.minValue < n :=
+    int32_minval_lt_of_ne_minval _ nnemv.symm
+  by_cases lenabs : int32_abs n < 2
+  · rw [dif_pos lenabs]
+    apply Int32.lt_iff_toInt_lt.mp at lenabs
+    rw [int32_toInt_abs _ mvltn] at lenabs
+    apply lt_of_abs_lt at lenabs
+    simp only [Int32.reduceToInt] at lenabs
+    rw [← one_add_one_eq_two] at lenabs
+    exact le_of_lt (Int.lt_of_le_of_lt (Int.le_of_lt_add_one lenabs) ltati)
+  rw [dif_neg lenabs]
+  apply Int32.not_lt.mp at lenabs
+  have ati : a.toInt = a.toInt.natAbs := by
+    symm
+    apply Int.ofNat_natAbs_of_nonneg (Int.le_of_lt _)
+    exact lt_trans (by decide) ltati
+  have lta' : 1 < a.toInt.natAbs := by
+    apply Int.lt_of_ofNat_lt_ofNat
+    rw [← ati]
+    exact ltati
+  have ltn : 1 < n.toInt.natAbs := by
+    apply Int.lt_of_ofNat_lt_ofNat (Int.lt_of_add_one_le _)
+    apply Int32.le_iff_toInt_le.mp at lenabs
+    rw [int32_toInt_abs _ mvltn, Int.abs_eq_natAbs _] at lenabs
+    exact lenabs
+  by_cases nabslt : int32_abs n < SIEVE_SIZE_32
+  · rw [dif_pos nabslt, ati]
+    exact (divs_getElem_dvd_and_le _ _ ltn).2 _ lta' (Int.natAbs_dvd_natAbs.mpr advd)
+  rw [dif_neg nabslt]
+  apply Int32.le_iff_toInt_le.mp
+  exact divisor_search_first _ _ lta advd
+
 end CodeChef
