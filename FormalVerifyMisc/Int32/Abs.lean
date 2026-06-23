@@ -42,6 +42,14 @@ theorem int32_natAbs_toInt_lt (a : Int32) (hlba : Int32.minValue < a) :
   rw [← int32_toInt_abs _ hlba]
   exact int32_toInt_abs_lt _
 
+theorem int32_natAbs_toInt_le (a : Int32) :
+  a.toInt.natAbs ≤ 2^31 := by
+  by_cases hmv : a = Int32.minValue
+  · subst hmv
+    decide
+  push_neg at hmv
+  exact le_of_lt (int32_natAbs_toInt_lt _ (int32_minval_lt_of_ne_minval _ hmv.symm))
+
 @[simp] theorem int32_abs_zero : int32_abs 0 = 0 := rfl
 
 theorem int32_zero_of_abs_zero

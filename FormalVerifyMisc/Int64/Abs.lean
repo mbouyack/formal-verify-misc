@@ -42,6 +42,14 @@ theorem int64_natAbs_toInt_lt (a : Int64) (hlba : Int64.minValue < a) :
   rw [← int64_toInt_abs _ hlba]
   exact int64_toInt_abs_lt _
 
+theorem int64_natAbs_toInt_le (a : Int64) :
+  a.toInt.natAbs ≤ 2^63 := by
+  by_cases hmv : a = Int64.minValue
+  · subst hmv
+    decide
+  push_neg at hmv
+  exact le_of_lt (int64_natAbs_toInt_lt _ (int64_minval_lt_of_ne_minval _ hmv.symm))
+
 @[simp] theorem int64_abs_zero : int64_abs 0 = 0 := rfl
 
 theorem int64_zero_of_abs_zero
