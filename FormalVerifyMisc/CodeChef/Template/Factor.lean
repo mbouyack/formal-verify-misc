@@ -1,5 +1,6 @@
 import Mathlib.Data.Int.DivMod
 import Mathlib.Data.Nat.Prime.Basic
+import Mathlib.Data.Nat.Factorization.Basic
 import Mathlib.Algebra.Order.Ring.Abs
 import FormalVerifyMisc.Int32.Abs
 import FormalVerifyMisc.Int32.Mod
@@ -446,6 +447,24 @@ theorem divisor_search_zero : divisor_search 0 = 2 := by
   apply search_opt_first_of_ne_none _ _ nenone _ (Int32.le_refl _)
   exact Or.inl (div_search_success_of_mod2_eq_zero (by decide))
 
+theorem divisor_search_gt_of_gt (n : Int32) (hgt : 1 < n.toInt.natAbs) :
+  1 < divisor_search n := by
+  unfold divisor_search
+  apply Int32.lt_iff_toInt_lt.mpr
+  split_ifs with h
+  · have nnemv : n ≠ Int32.minValue := by
+      contrapose! h; subst h
+      exact divisor_index_ne_none_of_minValue
+    rw [int32_toInt_abs _ (int32_minval_lt_of_ne_minval _ nnemv.symm)]
+    rw [Int.abs_eq_natAbs]
+    exact Int.ofNat_lt_ofNat_of_lt hgt
+  · apply Int.lt_of_add_one_le
+    simp only [Int32.reduceToInt, Int.reduceAdd]
+    change Int32.toInt (2 : Int32) ≤ _
+    apply Int32.le_iff_toInt_le.mp
+    rw [← primes_getElem_zero_eq_two]
+    apply primes_nondecreasing _ _ (Nat.zero_le _)
+
 -- If the search is successful, the divisor is in-fact a divisor
 theorem divisor_search_dvd (n : Int32) :
   (divisor_search n).toInt ∣ n.toInt := by
@@ -537,6 +556,54 @@ theorem divisor_search_first_of_prime (n : Int32)
   rwa [Int.ofNat_natAbs_of_nonneg]
   exact Int32.le_iff_toInt_le.mp (divisor_index_opt_ge_of_ne_none _ nenone)
 
+lemma one_lt_of_ne_zero_of_ne_one {a : ℕ} (ane0 : a ≠ 0) (ane1 : a ≠ 1) : 1 < a :=
+  lt_of_le_of_ne (Nat.add_one_le_of_lt (Nat.pos_of_ne_zero ane0)) ane1.symm
+
+-- The smallest divisor greater than 1 is prime
+-- TODO: Is the really not already proven in Mathlib?
+theorem prime_of_dvd_of_le {p n : ℕ}
+  (hdvd : p ∣ n) (hgt : 1 < p)
+  (hfirst : ∀ m, 1 < m → m ∣ n → p ≤ m) : Nat.Prime p := by
+  by_contra! h
+  have ppos : 0 < p := Nat.pos_of_ne_zero (Nat.ne_zero_of_lt hgt)
+  have lep : 2 ≤ p := Nat.add_one_le_of_lt hgt
+  rcases Nat.exists_dvd_of_not_prime lep h with ⟨m, mdvdp, mne1, mnep⟩
+  have mnz : m ≠ 0 := by
+    contrapose! lep
+    subst lep
+    rw [Nat.zero_dvd.mp mdvdp]
+    decide
+  have mpos := lt_of_le_of_ne (Nat.zero_le _) mnz.symm
+  have ltm : 1 < m :=
+    one_lt_of_ne_zero_of_ne_one mnz mne1
+  have mdvdn : m ∣ n := dvd_trans mdvdp hdvd
+  absurd Nat.le_of_dvd ppos mdvdp; push_neg
+  exact lt_of_le_of_ne (hfirst m ltm mdvdn) mnep.symm
+
+-- The smallest divisor is less than or equal to its cofactor
+theorem le_div_self_of_dvd_of_le {p n : ℕ}
+  (hdvd : p ∣ n) (hgt : 1 < p) (hlt : p < n)
+  (hfirst : ∀ m, 1 < m → m ∣ n → p ≤ m) : p ≤ n / p := by
+  have ppos : 0 < p := Nat.pos_of_ne_zero (Nat.ne_zero_of_lt hgt)
+  apply hfirst (n / p) _ (Nat.div_dvd_of_dvd hdvd)
+  rwa [← Nat.mul_lt_mul_left ppos, mul_one, Nat.mul_div_cancel' hdvd]
+
+-- The smallest divisor of 'n', if n < SIEVE_SIZE ^ 2,
+-- corresponds to an element of "primes"
+theorem primes_mem_of_dvd_of_le {p n : ℕ}
+  (hdvd : p ∣ n) (hgt : 1 < p) (hlt : p < n) (nlt : n < SIEVE_SIZE ^ 2)
+  (hfirst : ∀ m, 1 < m → m ∣ n → p ≤ m) :
+  ∃ p' ∈ primes, p'.toInt = p := by
+  have pprime := prime_of_dvd_of_le hdvd hgt hfirst
+  apply mem_primes_of_prime_of_lt p pprime
+  by_contra! lep
+  have ppos : 0 < p := Nat.pos_of_ne_zero (Nat.ne_zero_of_lt hgt)
+  absurd le_div_self_of_dvd_of_le hdvd hgt hlt hfirst; push_neg
+  rw [← Nat.mul_lt_mul_left ppos, Nat.mul_div_cancel' hdvd]
+  apply lt_of_lt_of_le nlt
+  rw [Nat.pow_two]
+  exact Nat.mul_le_mul lep lep
+
 -- The divisor search does in-fact find the smallest divisor of 'n' greater than 1
 theorem divisor_search_first (n : Int32) :
   ∀ a : Int32, 1 < a → a.toInt ∣ n.toInt → divisor_search n ≤ a := by
@@ -579,27 +646,10 @@ theorem divisor_search_first (n : Int32) :
   -- Let 'p' be the smallest divisor of n.toInt.natAbs greater than 1
   let p : ℕ := Nat.find dvdex
   have psat : 1 < p ∧ p ∣ n.toInt.natAbs := Nat.find_spec dvdex
-  have pfirst : ∀ m, 1 < m ∧ m ∣ n.toInt.natAbs → p ≤ m :=
-    fun m h ↦ Nat.find_le h
+  have pfirst : ∀ m, 1 < m → m ∣ n.toInt.natAbs → p ≤ m :=
+    fun m h h' ↦ Nat.find_le (And.intro h h')
+  have pprime := prime_of_dvd_of_le psat.2 psat.1 pfirst
   have ppos : 0 < p := lt_trans (by decide) psat.1
-  have pne1 : p ≠ 1 := (ne_of_lt psat.1).symm
-  have h1lt : ∀ m, m ≠ 0 → m ≠ 1 → 1 < m := by
-    intro m mnz mn1
-    apply lt_of_le_of_ne (Nat.add_one_le_of_lt _) mn1.symm
-    exact Nat.pos_of_ne_zero mnz
-  -- Prove that the smallest divisor must be prime
-  have pprime : Nat.Prime p := by
-    by_contra! h
-    rcases Nat.exists_dvd_of_not_prime (Nat.add_one_le_of_lt psat.1) h with ⟨m, mdvdp, mne1, mnep⟩
-    have mnz : m ≠ 0 := by
-      by_contra! mz
-      absurd Nat.ne_zero_of_lt ppos
-      apply Nat.zero_dvd.mp
-      exact mz ▸ mdvdp
-    have ltm : 1 < m := h1lt m mnz mne1
-    have mdvdn : m ∣ n.toInt.natAbs := dvd_trans mdvdp psat.2
-    have mlt := Nat.lt_of_le_of_ne (pfirst m (And.intro ltm mdvdn)) mnep.symm
-    exact Nat.not_lt.mpr (Nat.le_of_dvd ppos mdvdp) mlt
   -- Next, use a prior result to show that the absolute value of 'n' is prime
   by_cases hprime : Nat.Prime n.toInt.natAbs
   · exact divisor_search_first_of_prime _ hprime _ lta' a'dvd
@@ -607,35 +657,14 @@ theorem divisor_search_first (n : Int32) :
     apply Nat.lt_of_le_of_ne (Nat.le_of_dvd npos psat.2)
     contrapose! hprime
     rwa [← hprime]
+  have nlt : n.toInt.natAbs < SIEVE_SIZE ^ 2 := by
+    apply lt_of_le_of_lt (int32_natAbs_toInt_le _)
+    decide
+  -- 'p' corresponds to an element in "primes"
+  have exmem := primes_mem_of_dvd_of_le psat.2 psat.1 plt nlt pfirst
   -- Now we can prove that p * p is not greater than the absolute value of 'n'
-  have ledvd : p ≤ n.toInt.natAbs / p := by
-    rcases psat.2 with ⟨m, hm⟩
-    have mne0 : m ≠ 0 := by
-      contrapose! npos
-      apply Nat.le_zero.mpr
-      rw [hm, npos, mul_zero]
-    have mne1 : m ≠ 1 := by
-      by_contra! m1
-      absurd (ne_of_lt plt).symm
-      subst m1
-      rwa [mul_one] at hm
-    have ltm : 1 < m := h1lt m mne0 mne1
-    rw [hm, Nat.mul_div_cancel_left _ ppos]
-    apply pfirst m (And.intro ltm _)
-    use p
-    rwa [mul_comm]
-  -- Prove that 'p' is in "primes"
-  have exmem : ∃ q, q ∈ primes ∧ q.toInt = p := by
-    apply mem_primes_of_prime_of_lt p pprime
-    by_contra! lep
-    apply Nat.mul_le_mul_left p at ledvd
-    rw [Nat.mul_div_cancel' psat.2] at ledvd
-    absurd le_trans (Nat.mul_le_mul lep lep) ledvd; push_neg
-    by_cases nmv : n = Int32.minValue
-    · subst nmv; decide
-    push_neg at nmv
-    have ltn : Int32.minValue < n := Int32.lt_of_le_of_ne (Int32.minValue_le _) nmv.symm
-    exact lt_trans (int32_natAbs_toInt_lt n ltn) (by decide)
+  --have ledvd : p ≤ n.toInt.natAbs / p :=
+  --  le_div_self_of_dvd_of_le psat.2 psat.1 plt pfirst
   rcases exmem with ⟨p', p'mem, hp'p⟩
   rcases Array.getElem_of_mem p'mem with ⟨i, ilt, hip'⟩
   -- Now that we have the index of p in "primes", get the corresponding Int32
@@ -689,7 +718,7 @@ theorem divisor_search_first (n : Int32) :
     exact Int32.le_iff_toInt_le.mp (primes_ge _ _)
   apply Int32.le_iff_toInt_le.mpr
   rw [← Int.ofNat_natAbs_of_nonneg a'tinn]
-  convert Int.ofNat_le_ofNat_of_le (pfirst a ⟨lta, advd⟩)
+  convert Int.ofNat_le_ofNat_of_le (pfirst a lta advd)
   apply le_antisymm
   · rw [← hp'p, ← hip']
     apply Int32.le_iff_toInt_le.mp
@@ -712,7 +741,7 @@ theorem divisor_search_first (n : Int32) :
     rw [i'ti, Int.natAbs_natCast]
   · rw [q'ti]
     apply Int.ofNat_le_ofNat_of_le
-    apply pfirst q (And.intro ltq _)
+    apply pfirst q ltq _
     rw [← Int.ofNat_dvd, ← q'ti, Int.dvd_natAbs]
     rw [← int32_mod_eq_zero_iff_toInt_dvd]
     apply dvd_of_div_search_success_sat
@@ -723,7 +752,7 @@ theorem divisor_search_first (n : Int32) :
 -- search for the result using 'divisor_search'
 def smallest_divisor (n : Int32) : Int32 :=
   if nnemv : n = Int32.minValue then 2 else
-  if lenabs : int32_abs n < 2 then n else
+  if lenabs : int32_abs n < 2 then int32_abs n else
   if nabslt : int32_abs n < SIEVE_SIZE_32 then divs[n.toInt.natAbs]'(by
     push_neg at nnemv
     have ltn := Int32.lt_of_le_of_ne (Int32.minValue_le n) nnemv.symm
@@ -732,6 +761,43 @@ def smallest_divisor (n : Int32) : Int32 :=
     rw [divs_size]
     exact Int.lt_of_ofNat_lt_ofNat nabslt
   ) else divisor_search n
+
+theorem smallest_divisor_zero :
+  smallest_divisor 0 = 0 := by
+  unfold smallest_divisor
+  rw [dif_neg (by decide), dif_pos (by decide)]
+  rfl
+
+theorem smallest_divisor_minValue :
+  smallest_divisor Int32.minValue = 2 := by
+  unfold smallest_divisor
+  rw [dif_pos rfl]
+
+theorem smallest_divisor_nonneg (n : Int32) :
+  0 ≤ smallest_divisor n := by
+  unfold smallest_divisor
+  by_cases nnemv : n = Int32.minValue
+  · rw [dif_pos nnemv]; decide
+  push_neg at nnemv
+  have mvltn : Int32.minValue < n :=
+    int32_minval_lt_of_ne_minval _ nnemv.symm
+  rw [dif_neg nnemv]
+  by_cases lenabs : int32_abs n < 2
+  · rw [dif_pos lenabs]
+    exact int32_abs_nonneg _ mvltn
+  rw [dif_neg lenabs]
+  apply Int32.not_lt.mp at lenabs
+  have ltn : 1 < n.toInt.natAbs := by
+    apply Int.lt_of_ofNat_lt_ofNat (Int.lt_of_add_one_le _)
+    apply Int32.le_iff_toInt_le.mp at lenabs
+    rw [int32_toInt_abs _ mvltn, Int.abs_eq_natAbs _] at lenabs
+    exact lenabs
+  apply Int32.le_of_lt
+  by_cases nabslt : int32_abs n < SIEVE_SIZE_32
+  · rw [dif_pos nabslt]
+    exact Int32.lt_trans Int32.zero_lt_one (divs_gt_one _ ltn _)
+  rw [dif_neg nabslt]
+  exact Int32.lt_trans Int32.zero_lt_one (divisor_search_gt_of_gt _ ltn)
 
 theorem smallest_divisor_dvd (n : Int32) :
   (smallest_divisor n).toInt ∣ n.toInt := by
@@ -744,7 +810,8 @@ theorem smallest_divisor_dvd (n : Int32) :
     int32_minval_lt_of_ne_minval _ nnemv.symm
   rw [dif_neg nnemv]
   by_cases lenabs : int32_abs n < 2
-  · rw [dif_pos lenabs]
+  · rw [dif_pos lenabs, int32_toInt_abs _ mvltn]
+    exact abs_dvd_self _
   rw [dif_neg lenabs]
   apply Int32.not_lt.mp at lenabs
   have ltn : 1 < n.toInt.natAbs := by
@@ -775,10 +842,10 @@ theorem smallest_divisor_le (n : Int32) :
   have mvltn : Int32.minValue < n :=
     int32_minval_lt_of_ne_minval _ nnemv.symm
   by_cases lenabs : int32_abs n < 2
-  · rw [dif_pos lenabs]
+  · have htia := int32_toInt_abs _ mvltn
+    rw [dif_pos lenabs, htia]
     apply Int32.lt_iff_toInt_lt.mp at lenabs
-    rw [int32_toInt_abs _ mvltn] at lenabs
-    apply lt_of_abs_lt at lenabs
+    rw [htia] at lenabs
     simp only [Int32.reduceToInt] at lenabs
     rw [← one_add_one_eq_two] at lenabs
     exact le_of_lt (Int.lt_of_le_of_lt (Int.le_of_lt_add_one lenabs) ltati)
@@ -803,5 +870,135 @@ theorem smallest_divisor_le (n : Int32) :
   rw [dif_neg nabslt]
   apply Int32.le_iff_toInt_le.mp
   exact divisor_search_first _ _ lta advd
+
+theorem smallest_divisor_le' (n : Int32) :
+  ∀ a, 1 < a → a ∣ n.toInt.natAbs → (smallest_divisor n).toInt ≤ a := by
+  intro a lta advd
+  by_cases nnz : n = 0
+  · subst nnz
+    rw [smallest_divisor_zero]
+    exact Int.natCast_nonneg _
+  push_neg at nnz
+  have npos : 0 < n.toInt.natAbs := by
+    apply Int.natAbs_pos.mpr
+    contrapose! nnz
+    exact Int32.toInt_inj.mp nnz
+  by_cases nnemv : n = Int32.minValue
+  · subst nnemv
+    rw [smallest_divisor_minValue]
+    simp only [Int32.reduceToInt, Nat.ofNat_le_cast]
+    exact Nat.add_one_le_of_lt lta
+  push_neg at nnemv
+  have mvltn : Int32.minValue < n :=
+    int32_minval_lt_of_ne_minval _ nnemv.symm
+  let a' : Int32 := Int32.ofNat a
+  have ha : a'.toInt = a := by
+    apply Int32.toInt_ofNat_of_lt (lt_of_le_of_lt _ (int32_natAbs_toInt_lt _ mvltn))
+    exact Nat.le_of_dvd npos advd
+  rw [← ha]
+  have lta' : 1 < a' := by
+    apply Int32.lt_iff_toInt_lt.mpr
+    rw [ha]
+    exact Int.ofNat_lt_ofNat_of_lt lta
+  apply Int32.le_iff_toInt_le.mp
+  apply smallest_divisor_le _ _ lta'
+  rw [ha]
+  exact Int.dvd_natAbs.mp (Int.ofNat_dvd.mpr advd)
+
+-- Lower bound on the smallest divisor
+-- Note that this only applies if 'n' is not 1, 0, or -1
+theorem smallest_divisor_gt (n : Int32) (hgt : 1 < n.toInt.natAbs) : 1 < smallest_divisor n := by
+  unfold smallest_divisor
+  by_cases nnemv : n = Int32.minValue
+  · rw [dif_pos nnemv]; decide
+  push_neg at nnemv
+  rw [dif_neg nnemv]
+  have lenabs : ¬int32_abs n < 2 := by
+    contrapose! hgt
+    apply Int.le_of_ofNat_le_ofNat
+    rw [← Int.abs_eq_natAbs, Nat.cast_one]
+    rw [← int32_toInt_abs _ (int32_minval_lt_of_ne_minval _ nnemv.symm)]
+    exact Int.le_of_lt_add_one (Int32.lt_iff_toInt_lt.mp hgt)
+  rw [dif_neg lenabs]
+  apply Int32.not_lt.mp at lenabs
+  by_cases nabslt : int32_abs n < SIEVE_SIZE_32
+  · rw [dif_pos nabslt]
+    apply divs_gt_one _ hgt
+  rw [dif_neg nabslt]
+  exact divisor_search_gt_of_gt _ hgt
+
+-- If a number is not prime and is greater than one,
+-- its smallest divisor is properly less than its absolute value
+theorem smallest_divisor_lt_of_not_prime (n : Int32)
+  (hgt : 1 < n.toInt.natAbs) (hnprime : ¬Nat.Prime n.toInt.natAbs) :
+  (smallest_divisor n).toInt < n.toInt.natAbs := by
+  let d := smallest_divisor n
+  have dtinn : 0 ≤ d.toInt :=
+    Int32.le_iff_toInt_le.mp (smallest_divisor_nonneg _)
+  have hdvd : d.toInt ∣ n.toInt := smallest_divisor_dvd n
+  have npos : (0 : ℤ) < n.toInt.natAbs :=
+    lt_trans zero_lt_one (Int.ofNat_lt_ofNat_of_lt hgt)
+  apply lt_of_le_of_ne (Int.le_of_dvd npos (Int.dvd_natAbs.mpr hdvd))
+  by_contra! h
+  rcases Nat.exists_prime_and_dvd (Nat.ne_of_lt hgt).symm with ⟨p, pprime, pdvd⟩
+  --let p' : Int32 := Int32.ofNat p
+  have pnen : p ≠ n.toInt.natAbs := by
+    contrapose! hnprime
+    rwa [← hnprime]
+  have plt : p < n.toInt.natAbs := by
+    apply lt_of_le_of_ne _ pnen
+    apply Nat.le_of_dvd _ pdvd
+    exact Int.lt_of_ofNat_lt_ofNat npos
+  absurd plt; push_neg
+  apply Int.le_of_ofNat_le_ofNat
+  -- Zero and one are not prime, so p is at least two
+  have pgt : 1 < p := by
+    contrapose! pprime
+    by_cases pz : p = 0
+    · subst pz; norm_num
+    rename' pz => pnz; push_neg at pnz
+    have lep : 1 ≤ p := Nat.add_one_le_of_lt (lt_of_le_of_ne (Nat.zero_le _) pnz.symm)
+    rw [Nat.le_antisymm pprime lep]
+    norm_num
+  rw [← h]
+  exact smallest_divisor_le' n p pgt pdvd
+
+-- If 'n' is not prime, its smallest divisor is in "primes"
+theorem smallest_divisor_mem_primes (n : Int32)
+  (hgt : 1 < n.toInt.natAbs) (hnprime : ¬Nat.Prime n.toInt.natAbs) :
+  smallest_divisor n ∈ primes := by
+  let d := smallest_divisor n
+  have dtinn : 0 ≤ d.toInt :=
+    Int32.le_iff_toInt_le.mp (smallest_divisor_nonneg n)
+  let hdvd : d.toInt.natAbs ∣ n.toInt.natAbs :=
+    Int.natAbs_dvd_natAbs.mpr (smallest_divisor_dvd n)
+  have hd : d.toInt.natAbs = d.toInt :=
+    Int.ofNat_natAbs_of_nonneg dtinn
+  let ltp : 1 < d :=
+    smallest_divisor_gt _ hgt
+  have ltp' : 1 < d.toInt.natAbs := by
+    apply Int.lt_of_ofNat_lt_ofNat (lt_of_lt_of_eq _ hd.symm)
+    exact Int32.lt_iff_toInt_lt.mp ltp
+  have plt : d.toInt.natAbs < n.toInt.natAbs := by
+    apply Int.lt_of_ofNat_lt_ofNat (lt_of_eq_of_lt hd _)
+    exact smallest_divisor_lt_of_not_prime _ hgt hnprime
+  by_cases nnemv : n = Int32.minValue
+  · subst nnemv
+    rw [smallest_divisor_minValue, ← primes_getElem_zero_eq_two]
+    exact Array.getElem_mem primes_size_pos
+  push_neg at nnemv
+  have mvltn : Int32.minValue < n :=
+    int32_minval_lt_of_ne_minval _ nnemv.symm
+  have nlt : n.toInt.natAbs < SIEVE_SIZE ^ 2 := by
+    exact lt_trans (int32_natAbs_toInt_lt n mvltn) (by decide)
+  have hfirst : ∀ m, 1 < m → m ∣ n.toInt.natAbs → d.toInt.natAbs ≤ m := by
+    intro m ltm mdvd
+    apply Int.le_of_ofNat_le_ofNat
+    rw [Int.ofNat_natAbs_of_nonneg dtinn]
+    exact smallest_divisor_le' n m ltm mdvd
+  rcases primes_mem_of_dvd_of_le hdvd ltp' plt nlt hfirst with ⟨p, pmem, hp⟩
+  rw [hd] at hp
+  rw [Int32.toInt_inj.mp hp] at pmem
+  exact pmem
 
 end CodeChef
