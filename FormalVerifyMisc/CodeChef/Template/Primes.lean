@@ -72,8 +72,10 @@ structure Sieve (P : SieveParams) where
   hpmem_iff : ∀ p : ℕ,
     ((p : ℤ) ∈ (Array.map Int32.toInt primes) ↔
      (p : ℤ) < iter.val.toInt ∧ Nat.Prime p)
-  -- If an entry in the sieve is non-zero, its value corresponds to the smallest
-  -- divisor of its index greater than 1
+  -- If an entry in the sieve is non-zero, it is a divisor of its index
+  -- less than or equal to every other non-unit divisor
+  -- Note that this is slightly imprecise (divs could be all 1's)
+  -- but was corrected with the addition of 'hdivs_ne1' (below)
   hdivs_dvd : ∀ j, (jlt : j < divs.size) → divs[j]'(jlt) ≠ 0 →
     (divs[j]'(jlt)).toInt ∣ j ∧
     ∀ y, 1 < y → y ∣ j → (divs[j]'(jlt)).toInt ≤ (y : ℤ)
@@ -82,6 +84,9 @@ structure Sieve (P : SieveParams) where
   -- The elements in 'primes' are strictly increasing
   hprimesinc : ∀ m n, (mlt : m < n) → (nlt : n < primes.size) →
     primes[m]'(lt_trans mlt nlt) < primes[n]
+  -- No element in divs is ever '1'
+  -- This corrects a "bug" in hdivs_dvd (see above for details)
+  hdivs_ne1 : ∀ d ∈ divs, d ≠ 1
 
 theorem sieve_index_toInt_pos {P : SieveParams} (S : Sieve P) : 0 < S.iter.val.toInt :=
   lt_of_lt_of_le (by simp) (Int32.le_iff_toInt_le.mp S.iter.hleval)
@@ -178,6 +183,7 @@ def init_sieve : Sieve InitSieveParams where
     · intro y lty ydvd; simp
   hprimessize := by simp
   hprimesinc := by simp
+  hdivs_ne1 := by simp
 
 structure MarkMultiplesStateParams where
   L : Int32
@@ -838,6 +844,27 @@ def advance_sieve_of_entry_eq_zero {P : SieveParams} (S : Sieve P)
     apply ((S.hpmem_iff p).mp _).1; unfold p
     rw [Int.ofNat_natAbs_of_nonneg pnn]
     apply Array.mem_map_of_mem; simp
+  hdivs_ne1 := by
+    intro d dmem
+    rcases Array.getElem_of_mem dmem with ⟨i, ilt, rfl⟩
+    rw [mark_multiples_size] at ilt
+    by_cases iz : i = 0
+    · subst iz
+      rw [mark_multiples_unchanged_of_first]
+      exact S.hdivs_ne1 _ (Array.getElem_mem _)
+    rename' iz => inz; push_neg at inz
+    have ipos : 0 < i := pos_of_ne_zero inz
+    by_cases dinz : S.divs[i] ≠ 0
+    · rw [mark_multiples_unchanged_of_marked S i ipos ilt dinz]
+      exact S.hdivs_ne1 _ (Array.getElem_mem _)
+    rename' dinz => diz; push_neg at diz
+    by_cases hdvd : S.iter.val.toInt ∣ ↑i
+    · rw [mark_multiples_changed S i ipos ilt diz hdvd]; symm
+      apply Int32.ne_of_lt (Int32.lt_iff_toInt_lt.mpr _)
+      apply Int.lt_of_add_one_le
+      exact Int32.le_iff_toInt_le.mp S.iter.hleval
+    rw [mark_multiples_unchanged_of_not_dvd S i ipos ilt hdvd]
+    exact S.hdivs_ne1 _ (Array.getElem_mem _)
 
 -- Advance the loop which fills out the sieve, in the case where S.divs[i] ≠ 0
 def advance_sieve_of_entry_ne_zero {P : SieveParams} (S : Sieve P)
@@ -902,6 +929,7 @@ def advance_sieve_of_entry_ne_zero {P : SieveParams} (S : Sieve P)
     apply lt_trans _ (Int.add_lt_add_right S.hprimessize 1)
     simp
   hprimesinc := S.hprimesinc
+  hdivs_ne1 := S.hdivs_ne1
 
 -- Combine the two cases into a single advancement function
 def advance_sieve {P : SieveParams} (S : Sieve P)
@@ -1283,5 +1311,42 @@ lemma mem_primes_dvd_le_sqrt_exists_of_not_prime
     by_contra! h; subst h
     rw [mul_zero] at hk'; subst hk'
     absurd kpos; decide
+
+-- All elements in 'divs' after the first two are greater than 1
+theorem divs_gt_one :
+  ∀ i, 1 < i → (ilt : i < divs.size) → 1 < divs[i] := by
+  intro i lti ilt
+  have dmem : divs[i] ∈ divs := Array.getElem_mem _
+  have dnn := sieve_of_eratosthenes.hdivsnn _ dmem
+  have ipos : 0 < i := lt_trans (by decide) lti
+  -- Our argument requires demonstrating a prime divisor of 'i' in "primes"
+  rcases Nat.exists_prime_and_dvd (ne_of_lt lti).symm with ⟨p, ⟨pprime, pdvd⟩⟩
+  have ppos : 0 < p := by
+    apply Nat.pos_of_ne_zero
+    contrapose! pprime
+    subst pprime
+    norm_num
+  have hindex := Int32.toInt_inj.mpr sieve_of_eratosthenes_index
+  simp only [sieve_size_32_toInt] at hindex
+  have ilt' := Int.ofNat_lt_ofNat_of_lt (divs_size ▸ ilt)
+  rw [← hindex] at ilt'
+  have plt := lt_of_le_of_lt (Int.ofNat_le_ofNat_of_le (Nat.le_of_dvd ipos pdvd)) ilt'
+  -- Show that 'p' is in "primes"
+  have pmem := (sieve_of_eratosthenes.hpmem_iff _).mpr (And.intro plt pprime)
+  rcases Array.mem_map.mp pmem with ⟨p', p'mem, hp'⟩
+  -- Because i has a divisor in "primes", that slot is marked
+  have dnz : divs[i] ≠ 0 := by
+    apply (sieve_of_eratosthenes.hmarked i ipos ilt).mp
+    use p', p'mem
+    rw [hp']
+    exact Int.ofNat_dvd.mpr pdvd
+  have dtigt : 1 ≤ divs[i].toInt :=
+    Int.add_one_le_of_lt (Int32.lt_iff_toInt_lt.mp (Int32.lt_of_le_of_ne dnn dnz.symm))
+  apply Int32.lt_iff_toInt_lt.mpr
+  simp only [Int32.reduceToInt]
+  apply lt_of_le_of_ne dtigt; symm
+  by_contra! h
+  absurd sieve_of_eratosthenes.hdivs_ne1 divs[i] (Array.getElem_mem _)
+  exact Int32.toInt_inj.mp h
 
 end CodeChef
