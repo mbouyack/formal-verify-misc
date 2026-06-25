@@ -1001,4 +1001,31 @@ theorem smallest_divisor_mem_primes (n : Int32)
   rw [Int32.toInt_inj.mp hp] at pmem
   exact pmem
 
+-- The value returned by 'smallest_divisor' corresponds to a prime
+theorem smallest_divisor_prime (n : Int32) (hgt : 1 < n.toInt.natAbs) :
+  ∃ p, Nat.Prime p ∧ (smallest_divisor n).toInt = p := by
+  let d := smallest_divisor n
+  have dtinn : 0 ≤ d.toInt := Int32.le_iff_toInt_le.mp (smallest_divisor_nonneg n)
+  have hdti : d.toInt = d.toInt.natAbs := (Int.ofNat_natAbs_of_nonneg dtinn).symm
+  have ddvd : d.toInt.natAbs ∣ n.toInt.natAbs := by
+    apply Int.ofNat_dvd.mp
+    rw [Int.natAbs_dvd, Int.dvd_natAbs]
+    exact smallest_divisor_dvd n
+  have dne1 : d.toInt.natAbs ≠ 1 := by
+    symm
+    apply ne_of_lt (Int.lt_of_ofNat_lt_ofNat _)
+    rw [← hdti, Int.ofNat_one, ← Int32.toInt_one]
+    exact Int32.lt_iff_toInt_lt.mp (smallest_divisor_gt _ hgt)
+  by_cases hprime : Nat.Prime n.toInt.natAbs
+  · use n.toInt.natAbs, hprime
+    contrapose! hprime
+    apply (Nat.not_prime_iff_exists_dvd_ne (Nat.add_one_le_of_lt hgt)).mpr
+    use d.toInt.natAbs, ddvd, dne1
+    contrapose! hprime
+    apply Int.natCast_inj.mpr at hprime
+    rwa [hdti]
+  have dmem : d ∈ primes := smallest_divisor_mem_primes _ hgt hprime
+  rcases prime_of_mem_primes _ dmem with ⟨p, hp, pprime⟩
+  use p, pprime
+
 end CodeChef
