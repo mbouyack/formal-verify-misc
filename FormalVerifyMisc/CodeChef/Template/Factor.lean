@@ -1667,4 +1667,12 @@ instance {N : ℕ} : LoopBase (FacBuilder N) where
 def factor (n : Int32) (npos : 0 < n) : Factorization :=
   (do_loop (fac_builder_init n npos rfl)).F
 
+theorem fac_to_nat_factor (n : Int32) (npos : 0 < n) :
+  fac_to_nat (factor n npos) = n.toInt.natAbs := by
+  let fbinit := fac_builder_init n npos rfl
+  let fbfin := do_loop fbinit
+  rw [← one_mul (fac_to_nat _)]
+  convert fbfin.hN; symm
+  apply decide_eq_true_iff.mp (loop_term fbinit)
+
 end CodeChef
