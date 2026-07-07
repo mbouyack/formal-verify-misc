@@ -1043,6 +1043,9 @@ theorem prime_power_prime_pos (pp : PrimePower) : 0 < pp.p := by
   rw [← Int.ofNat_inj.mp qprime]
   norm_num
 
+theorem prime_power_prime_toInt_nonneg (pp : PrimePower) : 0 ≤ pp.p.toInt :=
+  le_of_lt (Int32.lt_iff_toInt_lt.mp (prime_power_prime_pos pp))
+
 def prime_power_singleton (p : Int32)
   (hprime : ∃ q, Nat.Prime q ∧ p.toInt = q) : PrimePower where
   p := p
@@ -1166,6 +1169,44 @@ def fac_pop (F : Factorization) : Factorization where
     rw [fac_pop_size] at ilt
     exact lt_of_lt_of_le ilt (Nat.sub_le _ _)
 ) := fun _ _ ↦ Array.getElem_pop _
+
+-- Prove that if each consecutive pair of prime powers is in increasing order
+-- then the entire array is in increasing order
+theorem fac_getElem_prime_lt_of_lt (F : Factorization) :
+  ∀ i j, (ilt : i < j) → (jlt : j < F.A.size) → F.A[i].p < F.A[j].p := by
+  have : ∀ i' j', (i'lt : i' < j') → (j'lt : j' < F.A.size - 1) → F.A[i'].p < F.A[j'].p := by
+    intro i' j' i'lt j'lt
+    rw [← fac_pop_size F] at j'lt
+    rw [← fac_pop_getElem F j' j'lt]
+    rw [← fac_pop_getElem F i' (lt_trans i'lt j'lt)]
+    apply fac_getElem_prime_lt_of_lt _ _ _ i'lt
+  intro i j ilt jlt
+  have jnz : j ≠ 0 := Nat.ne_zero_of_lt ilt
+  have jpos : 0 < j := Nat.pos_of_ne_zero jnz
+  have jsp : j - 1 + 1 = j := Nat.sub_one_add_one jnz
+  by_cases hijp : i = j - 1
+  · subst hijp
+    convert F.pinc (j - 1) (by rwa [jsp])
+    exact jsp.symm
+  rename' hijp => hinejp; push_neg at hinejp
+  have ilt' := lt_of_le_of_ne (Nat.le_sub_one_of_lt ilt) hinejp
+  by_cases hj : j = F.A.size - 1
+  · have ltr := F.pinc (j - 1) (by rwa [jsp])
+    rw [getElem_congr_idx jsp] at ltr
+    have jplt : j - 1 < F.A.size - 1 :=
+      Nat.sub_lt_sub_right (Nat.one_le_of_lt jpos) jlt
+    exact Int32.lt_trans (this i (j - 1) ilt' jplt) ltr
+  rename' hj => hjne; push_neg at hjne
+  have jlt' : j < F.A.size - 1 :=
+    lt_of_le_of_ne (Nat.le_sub_one_of_lt jlt) hjne
+  exact this i j ilt jlt'
+termination_by F.A.size
+decreasing_by
+  rw [fac_pop_size]
+  apply Nat.sub_one_lt
+  contrapose! j'lt
+  rw [j'lt, Nat.zero_sub]
+  exact Nat.zero_le _
 
 def fac_push (F : Factorization) (pp : PrimePower)
   (hgt : (hnil : F.A ≠ #[]) → (fac_back F hnil).p < pp.p) : Factorization where
@@ -1674,5 +1715,232 @@ theorem fac_to_nat_factor (n : Int32) (npos : 0 < n) :
   rw [← one_mul (fac_to_nat _)]
   convert fbfin.hN; symm
   apply decide_eq_true_iff.mp (loop_term fbinit)
+
+def prime_power_to_primeFactorsList (pp : PrimePower) : List ℕ :=
+  List.replicate pp.x.toInt.natAbs pp.p.toInt.natAbs
+
+theorem prime_power_to_primeFactorsList_mem (pp : PrimePower) :
+  ∀ p ∈ prime_power_to_primeFactorsList pp, p = pp.p.toInt.natAbs :=
+  fun _ pmem ↦ (List.mem_replicate.mp pmem).2
+
+theorem prime_power_to_primeFactorsList_ne_nil (pp : PrimePower) :
+  prime_power_to_primeFactorsList pp ≠ [] := by
+  intro h
+  absurd (List.replicate_eq_nil_iff _).mp h; push_neg
+  apply Int.natAbs_ne_zero.mpr (Ne.symm (ne_of_lt _))
+  exact Int32.lt_iff_toInt_lt.mp pp.xpos
+
+theorem prime_power_to_primeFactorsList_getLast (pp : PrimePower) :
+  (prime_power_to_primeFactorsList pp).getLast
+  (prime_power_to_primeFactorsList_ne_nil pp) = pp.p.toInt.natAbs := by
+  exact prime_power_to_primeFactorsList_mem pp _ (List.getLast_mem _)
+
+-- Construct a list of prime factors, given a Factorization
+-- Below this will be proven equal to Nat.primeFactorsList
+def fac_to_primeFactorsList (F : Factorization) : List ℕ :=
+  F.A.toList.flatMap prime_power_to_primeFactorsList
+
+theorem fac_to_primeFactorsList_of_empty :
+  fac_to_primeFactorsList fac_one = [] := by
+  unfold fac_to_primeFactorsList
+  rw [fac_one_array, Array.toList_empty, List.flatMap_nil]
+
+theorem fac_to_primeFactorsList_empty_iff {F : Factorization} :
+  fac_to_primeFactorsList F = [] ↔ F.A = #[] := by
+  constructor
+  · unfold fac_to_primeFactorsList
+    intro h
+    apply List.flatMap_eq_nil_iff.mp at h
+    contrapose! h
+    have spos := Array.size_pos_iff.mpr h
+    use F.A.back spos, Array.mem_toList_iff.mpr (Array.back_mem spos)
+    exact prime_power_to_primeFactorsList_ne_nil _
+  · intro h
+    rw [fac_empty_iff.mpr h]
+    exact fac_to_primeFactorsList_of_empty
+
+theorem fac_to_primeFactorsList_ne_nil_iff {F : Factorization} :
+  fac_to_primeFactorsList F ≠ [] ↔ F.A ≠ #[] := by
+  contrapose!
+  exact fac_to_primeFactorsList_empty_iff
+
+theorem fac_to_primeFactorsList_recurrence (F : Factorization) (hnil : F.A ≠ #[]) :
+  fac_to_primeFactorsList F = fac_to_primeFactorsList (fac_pop F) ++
+  prime_power_to_primeFactorsList (fac_back F hnil) := by
+  unfold fac_to_primeFactorsList
+  have hnil' : F.A.toList ≠ [] := by
+    contrapose! hnil
+    exact Array.toList_eq_nil_iff.mp hnil
+  rw [← List.dropLast_append_getLast hnil', List.flatMap_append]
+  rw [List.flatMap_singleton, fac_pop_array, Array.toList_pop]
+  rw [Array.getLast_toList _ hnil', fac_back_eq_back]
+
+theorem fac_to_primeFactorsList_prime (F : Factorization) :
+  ∀ p ∈ (fac_to_primeFactorsList F), Nat.Prime p := by
+  unfold fac_to_primeFactorsList
+  intro p pmem
+  rcases List.mem_flatMap.mp pmem with ⟨pp, _, pmem'⟩
+  rw [(List.mem_replicate.mp pmem').2]
+  rcases pp.prime with ⟨q, qprime, hq⟩
+  rwa [hq, Int.natAbs_natCast]
+
+-- Improved version of the List.getLast_congr theorem
+-- There's no reason to require 'l₂ ≠ []' as List.getLast_congr does
+theorem list_getLast_congr {α : Type u} {l₁ l₂ : List α} (h₁ : l₁ ≠ []) (h₃ : l₁ = l₂) :
+  l₁.getLast h₁ = l₂.getLast (ne_of_eq_of_ne (Eq.symm h₃) h₁) := by
+  rwa [List.getLast_congr]
+
+-- "missing" theorem on the interaction of 'getLast' and 'flatMap'
+theorem list_getLast_flatMap {α β : Type} {f : α → List β}
+  {L : List α} (hnil : L ≠ []) (hnil' : f (L.getLast hnil) ≠ []) :
+  (List.flatMap f L).getLast (by
+    rw [List.flatMap_def]
+    apply List.flatten_ne_nil_iff.mpr
+    have hmem : f (L.getLast hnil) ∈ List.map f L :=
+      List.mem_map.mpr (Exists.intro (L.getLast hnil) (And.intro (List.getLast_mem hnil) rfl))
+    exact Exists.intro _ (And.intro hmem hnil')
+  ) = (f (L.getLast hnil)).getLast hnil' := by
+  have hnil'' : List.flatMap f L ≠ [] := by
+    intro h
+    absurd List.flatMap_eq_nil_iff.mp h; push_neg
+    exact Exists.intro _ (And.intro (List.getLast_mem hnil) hnil')
+  have hnil''' : List.map f L ≠ [] :=
+    fun h ↦ False.elim (hnil (List.map_eq_nil_iff.mp h))
+  rw [list_getLast_congr hnil'' List.flatMap_def]
+  rw [list_getLast_congr hnil' (Eq.symm (List.getLast_map hnil'''))]
+  exact List.getLast_flatten_of_getLast_ne_nil hnil''' _
+
+theorem fac_to_primeFactorsList_getLast (F : Factorization) (hnil : F.A ≠ #[]) :
+  (fac_to_primeFactorsList F).getLast (by
+    contrapose! hnil
+    exact fac_to_primeFactorsList_empty_iff.mp hnil
+  ) = (fac_back F hnil).p.toInt.natAbs := by
+  unfold fac_to_primeFactorsList
+  have hnil' : F.A.toList ≠ [] := by
+    contrapose! hnil
+    exact Array.toList_eq_nil_iff.mp hnil
+  rw [list_getLast_flatMap hnil' (prime_power_to_primeFactorsList_ne_nil _)]
+  rw [prime_power_to_primeFactorsList_getLast]; congr
+  rw [Array.getLast_toList, fac_back_eq_back]
+
+-- "missing" theorem on appending sorted lists
+theorem list_append_sorted_of_sorted_of_le (L₁ L₂ : List ℕ)
+  (hsort₁ : L₁.SortedLE) (hsort₂ : L₂.SortedLE)
+  (hle : (hnil₁ : L₁ ≠ []) → (hnil₂ : L₂ ≠ []) → L₁.getLast hnil₁ ≤ L₂.head hnil₂) :
+  (L₁ ++ L₂).SortedLE := by
+  by_cases hnil₁ : L₁ = []
+  · subst hnil₁
+    rwa [List.nil_append]
+  by_cases hnil₂ : L₂ = []
+  · subst hnil₂
+    rwa [List.append_nil]
+  push_neg at hnil₁ hnil₂
+  replace hle := hle hnil₁ hnil₂
+  apply List.sortedLE_of_getElem_le_getElem_of_le
+  intro i j ilt jlt ilej
+  by_cases jlt : j < L₁.length
+  · rw [← List.getElem_append_left' jlt L₂]
+    rw [← List.getElem_append_left' (lt_of_le_of_lt ilej jlt) L₂]
+    exact List.sortedLE_iff_getElem_le_getElem_of_le.mp hsort₁ ilej
+  rename' jlt => jge; push_neg at jge
+  rw [List.getElem_append_right jge]
+  by_cases ige : L₁.length ≤ i
+  · rw [List.getElem_append_right ige]
+    apply List.sortedLE_iff_getElem_le_getElem_of_le.mp hsort₂
+    exact Nat.sub_le_sub_right ilej L₁.length
+  rename' ige => ilt; push_neg at ilt
+  rw [← List.getElem_append_left' ilt]
+  unfold List.SortedLE at hsort₁
+  have L₁lplt : L₁.length - 1 < L₁.length :=
+    Nat.sub_one_lt (Nat.ne_zero_of_lt ilt)
+  have le₁ := @List.sortedLE_iff_getElem_le_getElem_of_le.mp
+    hsort₁ i (L₁.length - 1) ilt L₁lplt (Nat.le_sub_one_of_lt ilt)
+  rw [List.getLast_eq_getElem, List.head_eq_getElem] at hle
+  apply le_trans (le_trans le₁ hle)
+  exact List.sortedLE_iff_getElem_le_getElem_of_le.mp hsort₂ (Nat.zero_le _)
+
+-- Prove fac_to_primeFactorsList is sorted in non-decreasing order
+theorem fac_to_primeFactorsList_SortedLE (F : Factorization) :
+  (fac_to_primeFactorsList F).SortedLE := by
+  by_cases hnil : F.A = #[]
+  · rw [fac_empty_iff.mpr hnil, fac_to_primeFactorsList_of_empty]
+    apply List.sortedLE_of_getElem_le_getElem_of_le
+    intro _ j _ jlt
+    exact False.elim ((Nat.not_le.mpr jlt) (le_of_eq_of_le List.length_nil (Nat.zero_le j)))
+  rw [fac_to_primeFactorsList_recurrence F hnil]
+  have hsort := fac_to_primeFactorsList_SortedLE (fac_pop F)
+  apply list_append_sorted_of_sorted_of_le _ _ hsort (List.sortedLE_replicate _)
+  intro hnil₁ hnil₂
+  apply le_of_lt
+  rw [prime_power_to_primeFactorsList_mem _ _ (List.head_mem hnil₂)]
+  have hnil' := fac_to_primeFactorsList_ne_nil_iff.mp hnil₁
+  rw [fac_to_primeFactorsList_getLast _ hnil']
+  rw [fac_back_eq_getElem _ hnil']
+  rw [getElem_congr_coll (fac_pop_array F), Array.getElem_pop]
+  rw [fac_back_eq_getElem]
+  rw [getElem_congr_idx (congrArg (fun a ↦ a - 1) (fac_pop_size F))]; dsimp
+  apply Int.lt_of_ofNat_lt_ofNat
+  repeat rw [Int.ofNat_natAbs_of_nonneg (prime_power_prime_toInt_nonneg _)]
+  apply Int32.lt_iff_toInt_lt.mp
+  have snz : F.A.size ≠ 0 :=
+    Nat.ne_zero_of_lt (Array.size_pos_iff.mpr hnil)
+  have psnz : (fac_pop F).A.size ≠ 0 :=
+    Nat.ne_zero_of_lt (Array.size_pos_iff.mpr hnil')
+  rw [fac_pop_size] at psnz
+  have hrw : F.A.size - 1 - 1 + 1 = F.A.size - 1 := by
+    rw [Nat.sub_one_add_one psnz]
+  have hlt : F.A.size - 1 - 1 + 1 < F.A.size :=
+    lt_of_eq_of_lt hrw (Nat.sub_one_lt snz)
+  rw [← getElem_congr_idx hrw]
+  exact F.pinc (F.A.size - 1 - 1) hlt
+termination_by F.A.size
+decreasing_by
+  rw [fac_pop_size]
+  apply Nat.sub_one_lt _
+  exact Nat.ne_zero_of_lt (Array.size_pos_iff.mpr hnil)
+
+theorem fac_to_primeFactorsList_prod_eq_fac_to_nat (F : Factorization) :
+  (fac_to_primeFactorsList F).prod = fac_to_nat F := by
+  unfold fac_to_primeFactorsList
+  by_cases hsz : F.A.size = 0
+  · have hone := fac_empty_iff.mpr (Array.size_eq_zero_iff.mp hsz)
+    subst hone
+    rw [fac_to_nat_one, fac_one_array]; rfl
+  rename' hsz => hsnz; push_neg at hsnz
+  have spos : 0 < F.A.size := Nat.pos_of_ne_zero hsnz
+  have hnil : F.A ≠ #[] :=
+    fun h ↦ (ne_of_lt spos).symm (Array.size_eq_zero_iff.mpr h)
+  have hnil' : F.A.toList ≠ [] :=
+    fun h ↦ False.elim (hnil (Array.toList_eq_nil_iff.mp h))
+  rw [fac_to_nat_recurrence F hnil]
+  rw [← List.dropLast_append_getLast hnil', List.flatMap_append]
+  rw [List.flatMap_singleton, ← Array.toList_pop]
+  rw [← fac_pop_array]
+  rw [List.prod_append]
+  have := fac_to_primeFactorsList_prod_eq_fac_to_nat (fac_pop F)
+  unfold fac_to_primeFactorsList at this
+  rw [this]; congr
+  unfold prime_power_to_primeFactorsList
+  rw [List.prod_replicate, Array.getLast_toList _ hnil']
+  rw [← fac_back_eq_back _ hnil]; rfl
+
+theorem factor_to_primeFactorsList_prod (n : Int32) (npos : 0 < n) :
+  (fac_to_primeFactorsList (factor n npos)).prod = n.toInt.natAbs := by
+  rw [fac_to_primeFactorsList_prod_eq_fac_to_nat, fac_to_nat_factor]
+
+-- Prove that that the prime factors in fac_to_primeFactorsList matches
+-- those in Nat.primeFactorsList, though not necessarily in the same order
+theorem factor_to_primeFactorsList_perm (n : Int32) (npos : 0 < n) :
+  (fac_to_primeFactorsList (factor n npos)).Perm n.toInt.natAbs.primeFactorsList := by
+  have hprod := factor_to_primeFactorsList_prod n npos
+  exact Nat.primeFactorsList_unique hprod (fac_to_primeFactorsList_prime _)
+
+-- Prove that fac_to_primeFactorsList converts the results of calling 'factor'
+-- into the prime factors list returned by Nat.primeFactorsList
+theorem factor_to_primeFactorsList_eq (n : Int32) (npos : 0 < n) :
+  fac_to_primeFactorsList (factor n npos) = n.toInt.natAbs.primeFactorsList := by
+  have hperm := factor_to_primeFactorsList_perm n npos
+  apply List.Perm.eq_of_sortedLE _ (Nat.primeFactorsList_sorted _) hperm
+  exact fac_to_primeFactorsList_SortedLE _
 
 end CodeChef
